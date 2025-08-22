@@ -18,11 +18,26 @@ except ImportError:
     DOCX_AVAILABLE = False
     print("Warning: python-docx not available. Install with: pip install python-docx")
 
+# Import fuzzy matching utilities
+try:
+    from fuzzy_matching import FuzzyMatcher
+    FUZZY_AVAILABLE = True
+except ImportError:
+    FUZZY_AVAILABLE = False
+    print("Warning: fuzzy_matching not available. Install with: pip install fuzzywuzzy python-Levenshtein")
+
 class QuoteExtractor:
-    def __init__(self, min_quote_length: int = 20, max_quote_length: int = 200):
+    def __init__(self, min_quote_length: int = 20, max_quote_length: int = 200, use_fuzzy: bool = True):
         """Initialize the quote extractor with configuration parameters."""
         self.min_quote_length = min_quote_length
         self.max_quote_length = max_quote_length
+        self.use_fuzzy = use_fuzzy and FUZZY_AVAILABLE
+        
+        # Initialize fuzzy matcher if available
+        if self.use_fuzzy:
+            self.fuzzy_matcher = FuzzyMatcher()
+        else:
+            self.fuzzy_matcher = None
 
     def extract_text_from_document(self, doc_path: str) -> str:
         """Extract text content from a Word document."""
@@ -113,8 +128,15 @@ class QuoteExtractor:
                 r'\b(portal|interface|user|customer|experience|satisfaction|loyalty|retention)\b'
             ]
             
-            # Check if sentence contains insight indicators
-            has_insight = any(re.search(pattern, sentence, re.IGNORECASE) for pattern in insight_indicators)
+            # Check if sentence contains insight indicators using fuzzy matching if available
+            if self.use_fuzzy and self.fuzzy_matcher:
+                has_insight, confidence, matched_patterns = self.fuzzy_matcher.fuzzy_insight_detection(
+                    sentence, insight_indicators
+                )
+            else:
+                has_insight = any(re.search(pattern, sentence, re.IGNORECASE) for pattern in insight_indicators)
+                matched_patterns = [pattern for pattern in insight_indicators if re.search(pattern, sentence, re.IGNORECASE)]
+                confidence = 100.0 if has_insight else 0.0
             
             if has_insight:
                 # Find relevant interviewer context for this quote
@@ -130,7 +152,8 @@ class QuoteExtractor:
                     'metadata': {
                         'length': len(sentence),
                         'word_count': len(sentence.split()),
-                        'insight_indicators': [pattern for pattern in insight_indicators if re.search(pattern, sentence, re.IGNORECASE)]
+                        'insight_indicators': matched_patterns,
+                        'fuzzy_confidence': confidence
                     }
                 }
                 
@@ -163,6 +186,14 @@ class QuoteExtractor:
             r'\b(growth|expansion|development|improvement|enhancement|optimization|streamlining|efficiency|effectiveness)\b'
         ]
         
+        # Use fuzzy matching if available
+        if self.use_fuzzy and self.fuzzy_matcher:
+            speaker_role, confidence = self.fuzzy_matcher.fuzzy_speaker_identification(
+                sentence, interviewer_patterns, expert_patterns
+            )
+            return speaker_role
+        
+        # Fallback to exact pattern matching
         # Check interviewer patterns first (more specific)
         for pattern in interviewer_patterns:
             if re.search(pattern, sentence, re.IGNORECASE):

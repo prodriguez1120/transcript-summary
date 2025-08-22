@@ -40,8 +40,14 @@ class ExportManager:
             print(f"Quote analysis saved to: {output_file}")
             return output_file
             
+        except (IOError, OSError) as e:
+            print(f"File system error saving quote analysis: {e}")
+            return ""
+        except (ValueError, TypeError) as e:
+            print(f"Data serialization error: {e}")
+            return ""
         except Exception as e:
-            print(f"Error saving quote analysis: {e}")
+            print(f"Unexpected error saving quote analysis: {e}")
             return ""
 
     def export_quote_analysis_to_text(self, results: Dict[str, Any], output_file: str = None) -> str:
@@ -95,8 +101,14 @@ class ExportManager:
             print(f"Quote analysis exported to text: {output_file}")
             return output_file
             
+        except (IOError, OSError) as e:
+            print(f"File system error exporting to text: {e}")
+            return ""
+        except (ValueError, TypeError) as e:
+            print(f"Data formatting error: {e}")
+            return ""
         except Exception as e:
-            print(f"Error exporting quote analysis to text: {e}")
+            print(f"Unexpected error exporting to text: {e}")
             return ""
 
     def export_company_summary_page(self, summary_data: Dict[str, Any], output_file: str = None) -> str:
@@ -120,7 +132,9 @@ class ExportManager:
                         if takeaway.get('supporting_quotes'):
                             f.write("   Supporting quotes:\n")
                             for quote in takeaway['supporting_quotes'][:2]:  # Limit to 2 quotes
-                                f.write(f"     - {quote.get('text', '')}\n")
+                                # Use formatted_text if available, otherwise fall back to text
+                                quote_text = quote.get('formatted_text', quote.get('text', ''))
+                                f.write(f"     - {quote_text}\n")
                         f.write("\n")
                 
                 # Write strengths
@@ -133,7 +147,9 @@ class ExportManager:
                         if strength.get('supporting_quotes'):
                             f.write("   Supporting quotes:\n")
                             for quote in strength['supporting_quotes'][:2]:  # Limit to 2 quotes
-                                f.write(f"     - {quote.get('text', '')}\n")
+                                # Use formatted_text if available, otherwise fall back to text
+                                quote_text = quote.get('formatted_text', quote.get('text', ''))
+                                f.write(f"     - {quote_text}\n")
                         f.write("\n")
                 
                 # Write weaknesses
@@ -146,14 +162,22 @@ class ExportManager:
                         if weakness.get('supporting_quotes'):
                             f.write("   Supporting quotes:\n")
                             for quote in weakness['supporting_quotes'][:2]:  # Limit to 2 quotes
-                                f.write(f"     - {quote.get('text', '')}\n")
+                                # Use formatted_text if available, otherwise fall back to text
+                                quote_text = quote.get('formatted_text', quote.get('text', ''))
+                                f.write(f"     - {quote_text}\n")
                         f.write("\n")
             
             print(f"Company summary page exported to text: {output_file}")
             return output_file
             
+        except (IOError, OSError) as e:
+            print(f"File system error exporting company summary page: {e}")
+            return ""
+        except (ValueError, TypeError) as e:
+            print(f"Data formatting error exporting company summary page: {e}")
+            return ""
         except Exception as e:
-            print(f"Error exporting company summary page: {e}")
+            print(f"Unexpected error exporting company summary page: {e}")
             return ""
 
     def export_company_summary_to_excel(self, summary_data: Dict[str, Any], output_file: str = None) -> str:
@@ -200,8 +224,12 @@ class ExportManager:
                     
                     if takeaway.get('supporting_quotes'):
                         for quote in takeaway['supporting_quotes'][:2]:  # Limit to 2 quotes
-                            ws[f'B{current_row}'] = f"• {quote.get('text', '')}"
-                            ws[f'B{current_row}'].font = quote_font
+                            quote_cell = ws[f'B{current_row}']
+                            # Use formatted_text if available, otherwise fall back to text
+                            quote_text = quote.get('formatted_text', quote.get('text', ''))
+                            quote_cell.value = f"• {quote_text}"
+                            quote_cell.font = quote_font
+                            quote_cell.alignment = Alignment(wrap_text=False, vertical="top")
                             current_row += 1
                     
                     current_row += 1
@@ -222,8 +250,12 @@ class ExportManager:
                     
                     if strength.get('supporting_quotes'):
                         for quote in strength['supporting_quotes'][:2]:  # Limit to 2 quotes
-                            ws[f'B{current_row}'] = f"• {quote.get('text', '')}"
-                            ws[f'B{current_row}'].font = quote_font
+                            quote_cell = ws[f'B{current_row}']
+                            # Use formatted_text if available, otherwise fall back to text
+                            quote_text = quote.get('formatted_text', quote.get('text', ''))
+                            quote_cell.value = f"• {quote_text}"
+                            quote_cell.font = quote_font
+                            quote_cell.alignment = Alignment(wrap_text=False, vertical="top")
                             current_row += 1
                     
                     current_row += 1
@@ -244,26 +276,29 @@ class ExportManager:
                     
                     if weakness.get('supporting_quotes'):
                         for quote in weakness['supporting_quotes'][:2]:  # Limit to 2 quotes
-                            ws[f'B{current_row}'] = f"• {quote.get('text', '')}"
-                            ws[f'B{current_row}'].font = quote_font
+                            quote_cell = ws[f'B{current_row}']
+                            # Use formatted_text if available, otherwise fall back to text
+                            quote_text = quote.get('formatted_text', quote.get('text', ''))
+                            quote_cell.value = f"• {quote_text}"
+                            quote_cell.font = quote_font
+                            quote_cell.alignment = Alignment(wrap_text=False, vertical="top")
                             current_row += 1
                     
                     current_row += 1
             
-            # Auto-adjust column widths
-            for column in ws.columns:
-                max_length = 0
-                column_letter = get_column_letter(column[0].column)
-                
-                for cell in column:
-                    try:
-                        if len(str(cell.value)) > max_length:
-                            max_length = len(str(cell.value))
-                    except:
-                        pass
-                
-                adjusted_width = min(max_length + 2, 100)  # Cap at 100 characters
-                ws.column_dimensions[column_letter].width = adjusted_width
+            # Set specific column widths with special handling for quote column
+            column_widths = {
+                'A': 40,   # Main content column
+                'B': 80,   # Quote column - Wide for full quote display
+                'C': 30,   # Additional content columns
+                'D': 30
+            }
+            
+            for col_letter, width in column_widths.items():
+                if col_letter in ws.column_dimensions:
+                    ws.column_dimensions[col_letter].width = width
+            
+
             
             # Save workbook
             wb.save(output_file)
@@ -272,8 +307,135 @@ class ExportManager:
             print(f"Company summary page exported to Excel: {output_file}")
             return output_file
             
+        except (IOError, OSError) as e:
+            print(f"File system error exporting company summary page to Excel: {e}")
+            return ""
+        except (ValueError, TypeError) as e:
+            print(f"Data formatting error exporting company summary page to Excel: {e}")
+            return ""
         except Exception as e:
-            print(f"Error exporting company summary page to Excel: {e}")
+            print(f"Unexpected error exporting company summary page to Excel: {e}")
+            return ""
+
+    def export_quotes_to_excel(self, quotes_data: List[Dict[str, Any]], output_file: str = None) -> str:
+        """Export quotes to Excel file with proper text wrapping for quote column."""
+        if not EXCEL_AVAILABLE:
+            print("openpyxl not available for Excel export")
+            return ""
+        
+        if not output_file:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            output_file = os.path.join(self.output_directory, f"FlexXray_quotes_{timestamp}.xlsx")
+        
+        try:
+            # Create workbook and worksheet
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.title = "Quotes"
+            
+            # Define styles
+            header_font = Font(bold=True, size=12)
+            header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+            header_font_white = Font(bold=True, color="FFFFFF", size=12)
+            quote_font = Font(size=11)
+            
+            # Define headers
+            headers = [
+                "Quote ID", "Quote Text", "Speaker", "Company/Title", "Transcript", 
+                "Sentiment", "Relevance Score", "Theme", "Date"
+            ]
+            
+            # Write headers
+            for col, header in enumerate(headers, 1):
+                cell = ws.cell(row=1, column=col, value=header)
+                cell.font = header_font_white
+                cell.fill = header_fill
+                cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            
+            # Write quote data
+            for row, quote in enumerate(quotes_data, 2):
+                # Quote ID
+                ws.cell(row=row, column=1, value=quote.get('id', f"Q{row-1}"))
+                
+                # Quote Text - This is the main column that needs wrapping
+                quote_cell = ws.cell(row=row, column=2, value=quote.get('text', ''))
+                quote_cell.font = quote_font
+                quote_cell.alignment = Alignment(wrap_text=True, vertical="top")
+                
+                # Speaker
+                speaker_info = quote.get('speaker_info', '')
+                if isinstance(speaker_info, dict):
+                    speaker_name = speaker_info.get('name', '')
+                else:
+                    speaker_name = str(speaker_info)
+                ws.cell(row=row, column=3, value=speaker_name)
+                
+                # Company/Title
+                if isinstance(speaker_info, dict):
+                    company_title = speaker_info.get('company', '') or speaker_info.get('title', '')
+                else:
+                    company_title = ''
+                ws.cell(row=row, column=4, value=company_title)
+                
+                # Transcript
+                ws.cell(row=row, column=5, value=quote.get('transcript_name', ''))
+                
+                # Sentiment
+                ws.cell(row=row, column=6, value=quote.get('sentiment', ''))
+                
+                # Relevance Score
+                relevance = quote.get('relevance_score', '')
+                if relevance is not None:
+                    ws.cell(row=row, column=7, value=float(relevance))
+                else:
+                    ws.cell(row=row, column=7, value='')
+                
+                # Theme
+                ws.cell(row=row, column=8, value=quote.get('theme', ''))
+                
+                # Date
+                date_value = quote.get('date', '')
+                if date_value:
+                    ws.cell(row=row, column=9, value=date_value)
+            
+            # Set column widths with special handling for quote column
+            column_widths = {
+                'A': 10,   # Quote ID
+                'B': 80,   # Quote Text - Wide column for quotes
+                'C': 20,   # Speaker
+                'D': 25,   # Company/Title
+                'E': 30,   # Transcript
+                'F': 15,   # Sentiment
+                'G': 15,   # Relevance Score
+                'H': 20,   # Theme
+                'I': 15    # Date
+            }
+            
+            for col_letter, width in column_widths.items():
+                ws.column_dimensions[col_letter].width = width
+            
+            # Set row heights for quote rows to accommodate wrapped text
+            for row in range(2, len(quotes_data) + 2):
+                ws.row_dimensions[row].height = 60  # Set minimum height for quote rows
+            
+            # Freeze the header row
+            ws.freeze_panes = 'A2'
+            
+            # Save workbook
+            wb.save(output_file)
+            wb.close()
+            
+            print(f"Quotes exported to Excel: {output_file}")
+            return output_file
+            
+        except (IOError, OSError) as e:
+            print(f"File system error exporting quotes to Excel: {e}")
+            return ""
+        except (ValueError, TypeError) as e:
+            print(f"Data formatting error exporting quotes to Excel: {e}")
+            return ""
+        except Exception as e:
+            print(f"Unexpected error exporting quotes to Excel: {e}")
             return ""
 
     def _extract_section(self, text: str, section_header: str) -> str:
@@ -287,7 +449,6 @@ class ExportManager:
                 in_section = True
                 continue
             elif in_section and line.strip() and not line.startswith(' '):
-                # New section started
                 break
             elif in_section:
                 section_lines.append(line)

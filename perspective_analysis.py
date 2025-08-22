@@ -161,18 +161,167 @@ class PerspectiveAnalyzer:
                                          focus_areas=', '.join(perspective_data['focus_areas']),
                                          quotes_list=quotes_list)
 
+    def _extract_json_from_response(self, response_text: str) -> str:
+        """Extract JSON from OpenAI response text using robust multi-step approach."""
+        import re
+        import json
+        
+        if not response_text or not response_text.strip():
+            raise ValueError("Empty response text")
+        
+        # Clean up common formatting issues first
+        cleaned_text = response_text.strip()
+        
+        # Remove markdown code blocks
+        cleaned_text = re.sub(r'```json\s*', '', cleaned_text)
+        cleaned_text = re.sub(r'\s*```', '', cleaned_text)
+        
+        # Remove common conversational prefixes
+        cleaned_text = re.sub(r'^Here is the analysis:', '', cleaned_text, flags=re.IGNORECASE)
+        cleaned_text = re.sub(r'^Here is the response:', '', cleaned_text, flags=re.IGNORECASE)
+        cleaned_text = re.sub(r'^Analysis:', '', cleaned_text, flags=re.IGNORECASE)
+        cleaned_text = re.sub(r'^Hello! How can I assist you today\?', '', cleaned_text, flags=re.IGNORECASE)
+        cleaned_text = re.sub(r'^Hello! How can I help you today\?', '', cleaned_text, flags=re.IGNORECASE)
+        cleaned_text = re.sub(r'^Hello! How can I help you\?', '', cleaned_text, flags=re.IGNORECASE)
+        cleaned_text = re.sub(r'^Hello! How can I assist you\?', '', cleaned_text, flags=re.IGNORECASE)
+        
+        # Remove any leading/trailing whitespace and newlines
+        cleaned_text = cleaned_text.strip()
+        
+        # Strategy 1: Try to find JSON object with balanced braces (most reliable)
+        brace_start = cleaned_text.find('{')
+        if brace_start != -1:
+            brace_count = 0
+            brace_end = brace_start
+            
+            for i in range(brace_start, len(cleaned_text)):
+                char = cleaned_text[i]
+                if char == '{':
+                    brace_count += 1
+                elif char == '}':
+                    brace_count -= 1
+                    if brace_count == 0:
+                        brace_end = i + 1
+                        break
+            
+            if brace_count == 0:  # Found balanced braces
+                json_text = cleaned_text[brace_start:brace_end]
+                try:
+                    json.loads(json_text)
+                    return json_text
+                except json.JSONDecodeError:
+                    pass
+        
+        # Strategy 2: Try to find JSON array with balanced brackets
+        bracket_start = cleaned_text.find('[')
+        if bracket_start != -1:
+            bracket_count = 0
+            bracket_end = bracket_start
+            
+            for i in range(bracket_start, len(cleaned_text)):
+                char = cleaned_text[i]
+                if char == '[':
+                    bracket_count += 1
+                elif char == ']':
+                    bracket_count -= 1
+                    if bracket_count == 0:
+                        bracket_end = i + 1
+                        break
+            
+            if bracket_count == 0:  # Found balanced brackets
+                json_text = cleaned_text[bracket_start:bracket_end]
+                try:
+                    json.loads(json_text)
+                    return json_text
+                except json.JSONDecodeError:
+                    pass
+        
+        # Strategy 3: Try to find the largest valid JSON object/array
+        # Look for patterns like { ... } or [ ... ] and try to extract them
+        json_patterns = [
+            r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}',  # Nested objects
+            r'\[[^\[\]]*(?:\{[^{}]*\}[^\[\]]*)*\]',  # Arrays with objects
+            r'\{[^{}]*\}',  # Simple objects
+            r'\[[^\[\]]*\]'   # Simple arrays
+        ]
+        
+        for pattern in json_patterns:
+            matches = re.findall(pattern, cleaned_text, re.DOTALL)
+            for match in matches:
+                try:
+                    json.loads(match)
+                    return match
+                except json.JSONDecodeError:
+                    continue
+        
+        # Strategy 4: Try to fix common JSON formatting issues
+        # Remove trailing commas, fix unquoted keys, etc.
+        potential_json = cleaned_text
+        
+        # Find the first { or [ and try to extract from there
+        start_chars = ['{', '[']
+        for start_char in start_chars:
+            start_pos = potential_json.find(start_char)
+            if start_pos != -1:
+                # Try to extract from start_char to end, then work backwards
+                for end_pos in range(len(potential_json), start_pos, -1):
+                    try:
+                        test_json = potential_json[start_pos:end_pos]
+                        json.loads(test_json)
+                        return test_json
+                    except json.JSONDecodeError:
+                        continue
+        
+        # Strategy 5: Last resort - try to construct valid JSON from fragments
+        # Look for key-value patterns and try to build a valid object
+        if '{' in cleaned_text or '[' in cleaned_text:
+            # Try to extract just the JSON-like part
+            lines = cleaned_text.split('\n')
+            json_lines = []
+            in_json = False
+            
+            for line in lines:
+                line = line.strip()
+                if '{' in line or '[' in line:
+                    in_json = True
+                if in_json:
+                    json_lines.append(line)
+                if in_json and ('}' in line or ']' in line):
+                    break
+            
+            if json_lines:
+                potential_json = '\n'.join(json_lines)
+                # Try to fix common issues
+                potential_json = re.sub(r',\s*([}\]])', r'\1', potential_json)  # Remove trailing commas
+                potential_json = re.sub(r'([{[])\s*([^"\'\w])', r'\1"\2"', potential_json)  # Quote unquoted keys
+                
+                try:
+                    json.loads(potential_json)
+                    return potential_json
+                except json.JSONDecodeError:
+                    pass
+        
+        # If all else fails, provide detailed error information
+        print(f"Response text preview: {cleaned_text[:200]}...")
+        print("Contains {: " + str(cleaned_text.count('{')))
+        print("Contains }: " + str(cleaned_text.count('}')))
+        print(f"Contains [: {cleaned_text.count('[')}")
+        print(f"Contains ]: {cleaned_text.count(']')}")
+        
+        raise ValueError("No valid JSON found in response after all extraction strategies")
+
     def _parse_ranking_response(self, response_text: str, quotes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Parse OpenAI's ranking response and apply it to quotes."""
         try:
-            # Extract JSON from response
-            json_start = response_text.find('[')
-            json_end = response_text.rfind(']') + 1
+            # Extract JSON from response using robust extraction
+            json_text = self._extract_json_from_response(response_text)
             
-            if json_start == -1 or json_end == 0:
-                raise ValueError("No JSON array found in response")
-            
-            json_text = response_text[json_start:json_end]
+            # Parse the JSON
             rankings = json.loads(json_text)
+            
+            # Handle both array and single object responses
+            if not isinstance(rankings, list):
+                rankings = [rankings]
             
             # Apply rankings to quotes
             for ranking in rankings:
@@ -259,22 +408,22 @@ class PerspectiveAnalyzer:
                     'name': 'Key Insights',
                     'description': 'Primary insights from the perspective',
                     'key_insights': ['Analysis completed'],
-                    'max_quotes': 3
+                    'max_quotes': 4
                 }
             ]
 
     def _parse_themes_response(self, response_text: str) -> List[Dict[str, Any]]:
         """Parse OpenAI's themes response."""
         try:
-            # Extract JSON from response
-            json_start = response_text.find('[')
-            json_end = response_text.rfind(']') + 1
+            # Extract JSON from response using robust extraction
+            json_text = self._extract_json_from_response(response_text)
             
-            if json_start == -1 or json_end == 0:
-                raise ValueError("No JSON array found in response")
-            
-            json_text = response_text[json_start:json_end]
+            # Parse the JSON
             themes = json.loads(json_text)
+            
+            # Handle both array and single object responses
+            if not isinstance(themes, list):
+                themes = [themes]
             
             # Validate themes
             valid_themes = []
@@ -284,7 +433,7 @@ class PerspectiveAnalyzer:
                         'name': theme.get('name', 'Unknown Theme'),
                         'description': theme.get('description', ''),
                         'key_insights': theme.get('key_insights', []),
-                        'max_quotes': theme.get('max_quotes', 3)
+                        'max_quotes': theme.get('max_quotes', 4)
                     })
             
             return valid_themes
@@ -375,36 +524,35 @@ class PerspectiveAnalyzer:
             )
             
             # Parse cross-transcript themes
-            themes = self._parse_cross_transcript_themes(response.choices[0].message.content)
+            themes = self._parse_cross_transcript_themes_response(response.choices[0].message.content)
             return themes
             
         except Exception as e:
             print(f"Error identifying cross-transcript themes: {e}")
             return []
 
-    def _parse_cross_transcript_themes(self, theme_text: str) -> List[Dict[str, Any]]:
-        """Parse cross-transcript themes response."""
+    def _parse_cross_transcript_themes_response(self, response_text: str) -> List[Dict[str, Any]]:
+        """Parse OpenAI's cross-transcript themes response."""
         try:
-            # Extract JSON from response
-            json_start = theme_text.find('[')
-            json_end = theme_text.rfind(']') + 1
+            # Extract JSON from response using robust extraction
+            json_text = self._extract_json_from_response(response_text)
             
-            if json_start == -1 or json_end == 0:
-                raise ValueError("No JSON array found in response")
-            
-            json_text = theme_text[json_start:json_end]
+            # Parse the JSON
             themes = json.loads(json_text)
             
-            # Validate and clean themes
+            # Handle both array and single object responses
+            if not isinstance(themes, list):
+                themes = [themes]
+            
+            # Validate themes
             valid_themes = []
             for theme in themes:
-                if isinstance(theme, dict) and 'theme_name' in theme:
+                if isinstance(theme, dict) and 'name' in theme:
                     valid_themes.append({
-                        'theme_name': theme.get('theme_name', 'Unknown Theme'),
+                        'name': theme.get('name', 'Unknown Theme'),
                         'description': theme.get('description', ''),
-                        'transcripts_covered': theme.get('transcripts_covered', []),
                         'key_insights': theme.get('key_insights', []),
-                        'consistency_level': theme.get('consistency_level', 'medium')
+                        'max_quotes': theme.get('max_quotes', 4)
                     })
             
             return valid_themes

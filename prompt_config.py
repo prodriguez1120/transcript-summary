@@ -37,7 +37,7 @@ class PromptConfig:
                 "quote_ranking": "You are an expert analyst evaluating quotes for business insights.",
                 "theme_identification": "You are an expert business analyst identifying key themes from interview quotes.",
                 "transcript_analysis": "You are a professional analyst extracting structured information from call transcripts. Provide clear, concise answers based only on the transcript content. Include 1-2 relevant quotes per answer where helpful to support your analysis.",
-                "company_summary": "You are an expert business analyst creating comprehensive company summaries from interview data.",
+                "company_summary": "You are an expert business intelligence analyst. Your task is to process a transcript and generate a structured summary supported by direct quotes.",
                 "quote_scoring": "You are an expert analyst scoring text chunks for relevance to specific questions.",
                 "cross_transcript_analysis": "You are an expert analyst identifying common themes across multiple transcripts."
             },
@@ -130,26 +130,95 @@ QUOTE REQUIREMENTS:
             },
             
             "company_summary": {
-                "template": """Based on the following expert quotes from FlexXray interviews, create a comprehensive company summary page.
+                "template": """You are an expert business intelligence analyst. Your task is to process a transcript and generate a structured summary supported by direct quotes.
 
-The summary should include:
+**Input:** A single FlexXray interview transcript, which is a conversation between an interviewer and one or more industry experts.
 
-1. KEY TAKEAWAYS (3-5 bullet points with supporting quotes)
-2. STRENGTHS (3-5 bullet points with supporting quotes)
-3. WEAKNESSES (3-5 bullet points with supporting quotes)
+**Instructions:**
+1. **Analyze the transcript** to identify key themes related to business performance.
+2. **Extract quotes** that directly support the following pre-defined themes:
+   * **Key Takeaways:**
+       * "Clear market leadership"
+       * "Strong Value Prop Despite Potential Risk of Insourcing"
+       * "Local Presence drives Customer Demand"
+   * **Strengths:**
+       * "proprietary technology"
+       * "rapid turn-around times"
+   * **Weaknesses:**
+       * "limited addressable market"
+       * "unpredictable event timing"
+3. **Quote Requirements:**
+   * For each **Key Takeaway**, find **3-4 distinct quotes**.
+   * For each **Strength** and **Weakness**, find **2-3 distinct quotes**.
+   * The quotes must be from the **expert(s)**, not the interviewer. Use your speaker role filtering to ensure this.
+   * The quotes should be concise and directly relevant to the theme. Prioritize clear, direct statements over conversational filler.
+4. **Structured Output:** Format the output as a JSON object with the following structure:
+   ```json
+   {{
+     "key_takeaways": [
+       {{
+         "theme": "Clear market leadership",
+         "quotes": [
+           {{ "quote": "...", "speaker": "...", "document": "..." }},
+           {{ "quote": "...", "speaker": "...", "document": "..." }}
+         ]
+       }},
+       {{
+         "theme": "Strong Value Prop Despite Potential Risk of Insourcing",
+         "quotes": [
+           {{ "quote": "...", "speaker": "...", "document": "..." }},
+           {{ "quote": "...", "speaker": "...", "document": "..." }}
+         ]
+       }},
+       {{
+         "theme": "Local Presence drives Customer Demand",
+         "quotes": [
+           {{ "quote": "...", "speaker": "...", "document": "..." }},
+           {{ "quote": "...", "speaker": "...", "document": "..." }}
+         ]
+       }}
+     ],
+     "strengths": [
+       {{
+         "theme": "proprietary technology",
+         "quotes": [
+           {{ "quote": "...", "speaker": "...", "document": "..." }}
+         ]
+       }},
+       {{
+         "theme": "rapid turn-around times",
+         "quotes": [
+           {{ "quote": "...", "speaker": "...", "document": "..." }}
+         ]
+       }}
+     ],
+     "weaknesses": [
+       {{
+         "theme": "limited addressable market",
+         "quotes": [
+           {{ "quote": "...", "speaker": "...", "document": "..." }}
+         ]
+       }},
+       {{
+         "theme": "unpredictable event timing",
+         "quotes": [
+           {{ "quote": "...", "speaker": "...", "document": "..." }}
+         ]
+       }}
+     ]
+   }}
+   ```
+5. **Attribution:** For each quote, you must provide the following:
+   * `"quote"`: The exact text of the quote.
+   * `"speaker"`: The name of the person who said the quote.
+   * `"document"`: The name of the transcript file you are processing. (Your program will handle this part, but the prompt ensures the AI understands the need for this data point.)
 
-Guidelines:
-- Focus on actionable business insights
-- Use specific quotes to support each point
-- Keep insights concise and punchy
-- Avoid questions in the output
-- Select 1-2 most relevant quotes per insight
+**Note:** If a theme is not supported by the transcript, return an empty list of quotes for that theme. Do not invent quotes or themes.
 
-Expert Quotes:
+**Transcript Content:**
 {quotes_list}
 
-Please respond with a structured format that can be easily parsed into sections.
-Focus on the most important insights that emerge from these quotes.""",
+Please respond with ONLY the JSON object as specified above. Do not include any additional text, explanations, or formatting outside the JSON structure.""",
                 
                 "parameters": {
                     "model": "gpt-4",

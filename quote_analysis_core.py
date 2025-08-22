@@ -16,6 +16,7 @@ import time
 from dotenv import load_dotenv
 import hashlib
 from datetime import datetime
+import logging
 
 # Import configuration
 try:
@@ -52,16 +53,23 @@ load_dotenv()
 class QuoteAnalysisTool:
     def __init__(self, api_key: str = None, chroma_persist_directory: str = "./chroma_db"):
         """Initialize the quote analysis tool with OpenAI API key and ChromaDB."""
+        # Set up logger
+        self.logger = logging.getLogger(__name__)
+        
         self.api_key = api_key or os.getenv('OPENAI_API_KEY')
         if not self.api_key:
+            self.logger.error("OpenAI API key is required. Set OPENAI_API_KEY environment variable or pass it to the constructor.")
             raise ValueError("OpenAI API key is required. Set OPENAI_API_KEY environment variable or pass it to the constructor.")
         
         self.client = OpenAI(api_key=self.api_key)
         self.chroma_persist_directory = chroma_persist_directory
         
+        self.logger.info("Initializing QuoteAnalysisTool")
+        
         # Initialize ChromaDB if available
         if CHROMA_AVAILABLE:
             try:
+                self.logger.info(f"Initializing ChromaDB at {chroma_persist_directory}")
                 self.chroma_client = chromadb.PersistentClient(path=chroma_persist_directory)
                 
                 # Create collections for different types of data
@@ -79,11 +87,12 @@ class QuoteAnalysisTool:
                     }
                 )
                 
-                print(f"ChromaDB initialized at {chroma_persist_directory}")
-                print(f"Quotes collection has {self.quotes_collection.count()} existing quotes")
+                self.logger.info(f"ChromaDB initialized successfully at {chroma_persist_directory}")
+                quote_count = self.quotes_collection.count()
+                self.logger.info(f"Quotes collection has {quote_count} existing quotes")
                 
             except Exception as e:
-                print(f"Warning: ChromaDB initialization failed: {e}")
+                self.logger.error(f"ChromaDB initialization failed: {e}")
                 self.chroma_client = None
                 self.collection = None
                 self.quotes_collection = None
@@ -91,35 +100,57 @@ class QuoteAnalysisTool:
             self.chroma_client = None
             self.collection = None
             self.quotes_collection = None
-            print("Warning: ChromaDB not available. Quote analysis will be limited.")
+            self.logger.warning("ChromaDB not available. Quote analysis will be limited.")
         
         # Quote analysis parameters
         self.max_quotes_per_category = 5
         self.min_quote_length = 20
         self.max_quote_length = 200
         
-        # Define the three key perspectives
-        self.key_perspectives = {
-            "business_model": {
-                "title": "Business Model & Market Position",
-                "description": "How FlexXray operates, serves customers, and competes in the market",
-                "focus_areas": ["value proposition", "customer relationships", "market positioning", "competitive advantages"]
-            },
-            "growth_potential": {
-                "title": "Growth Potential & Market Opportunity",
-                "description": "FlexXray's expansion opportunities, market trends, and future prospects",
-                "focus_areas": ["market expansion", "product development", "industry trends", "growth drivers"]
-            },
-            "risk_factors": {
-                "title": "Risk Factors & Challenges",
-                "description": "Key risks, challenges, and areas of concern for FlexXray's business",
-                "focus_areas": ["service quality issues", "operational challenges", "competitive threats", "market risks"]
-            }
-        }
+        self.logger.info("QuoteAnalysisTool initialization completed")
 
     def get_expert_quotes_only(self, quotes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Filter quotes to include only expert quotes."""
-        return [q for q in quotes if q.get('speaker_role') == 'expert']
+        """Filter quotes to include only expert quotes, excluding interviewer questions."""
+        expert_quotes = []
+        
+        for quote in quotes:
+            if quote.get('speaker_role') != 'expert':
+                continue
+                
+            text = quote.get('text', '').strip()
+            
+            # Filter out quotes that are clearly interviewer questions or addressing
+            if any(pattern in text.lower() for pattern in [
+                'randy, as you think about',
+                'randy, what do you think',
+                'randy, can you explain',
+                'randy, how do you',
+                'randy, tell me about',
+                'randy, describe',
+                'randy, walk me through',
+                'randy, help me understand',
+                'randy, i want to understand',
+                'randy, i\'m curious about',
+                'randy, i\'d like to know',
+                'randy, can you walk me',
+                'randy, what is your',
+                'randy, what are your',
+                'randy, how would you',
+                'randy, what would you',
+                'randy, do you think',
+                'randy, do you see',
+                'randy, do you believe',
+                'randy, do you feel'
+            ]):
+                continue
+                
+            # Filter out quotes that start with addressing someone
+            if re.match(r'^[A-Z][a-z]+,?\s+(?:what|how|why|when|where|can you|could you|would you|do you|tell me|walk me|help me|i want|i\'m curious|i\'d like)', text.lower()):
+                continue
+                
+            expert_quotes.append(quote)
+        
+        return expert_quotes
 
     def get_quotes_by_speaker_role(self, quotes: List[Dict[str, Any]], speaker_role: str) -> List[Dict[str, Any]]:
         """Get quotes filtered by speaker role."""
@@ -256,6 +287,7 @@ class QuoteAnalysisTool:
         selection_stage_breakdown = {}
         
         for perspective_key, perspective_data in perspectives.items():
+            # Count quotes that have been ranked (either in themes or directly in the perspective)
             if 'themes' in perspective_data:
                 for theme in perspective_data['themes']:
                     if 'quotes' in theme:
@@ -265,6 +297,15 @@ class QuoteAnalysisTool:
                         for quote in theme['quotes']:
                             stage = quote.get('selection_stage', 'unknown')
                             selection_stage_breakdown[stage] = selection_stage_breakdown.get(stage, 0) + 1
+            
+            # Also count quotes that are directly ranked in the perspective (not just in themes)
+            if 'ranked_quotes' in perspective_data:
+                ranked_quotes = perspective_data['ranked_quotes']
+                for quote in ranked_quotes:
+                    if quote.get('selection_stage') in ['openai_ranked', 'openai_failed', 'parsing_failed']:
+                        total_ranked_quotes += 1
+                        stage = quote.get('selection_stage', 'unknown')
+                        selection_stage_breakdown[stage] = selection_stage_breakdown.get(stage, 0) + 1
         
         # Calculate ranking coverage
         all_quotes = results.get('all_quotes', [])

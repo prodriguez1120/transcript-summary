@@ -4,7 +4,11 @@ Centralizes output directory and other settings
 """
 
 import os
+import logging
 from pathlib import Path
+
+# Set up logger
+logger = logging.getLogger(__name__)
 
 # Get the project root directory
 PROJECT_ROOT = Path(__file__).parent
@@ -45,9 +49,9 @@ def get_output_paths():
 
 # Print configuration info
 if __name__ == "__main__":
-    print(f"Project Root: {PROJECT_ROOT}")
-    print(f"Output Directory: {OUTPUT_DIR}")
-    print(f"Output Directory exists: {OUTPUT_DIR.exists()}")
-    print("\nOutput file paths:")
+    logger.info(f"Project Root: {PROJECT_ROOT}")
+    logger.info(f"Output Directory: {OUTPUT_DIR}")
+    logger.info(f"Output Directory exists: {OUTPUT_DIR.exists()}")
+    logger.info("\nOutput file paths:")
     for key, path in get_output_paths().items():
-        print(f"  {key}: {path}")
+        logger.info(f"  {key}: {path}")

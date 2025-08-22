@@ -10,6 +10,7 @@ import concurrent.futures
 from functools import lru_cache
 import hashlib
 from datetime import datetime
+from prompt_config import get_prompt_config
 
 # Import configuration
 try:
@@ -716,36 +717,29 @@ RELEVANT CONTEXT FROM PREVIOUS ANALYSES:
 
 """
             
-            main_prompt = f"""
-You are analyzing a transcript from a call conversation. Please extract information from the following transcript and answer the questions below.
-
-{context_section}TRANSCRIPT:
-{transcript_text}
-
-Please provide detailed answers to the following questions based ONLY on the information in this transcript. If information is not available in the transcript, clearly state "Information not available in transcript."
-
-IMPORTANT: Only use information from this specific transcript. Do not make assumptions or use external knowledge.
-
-QUOTE REQUIREMENTS:
-- For each answer, include 1-2 relevant quotes from the transcript where helpful
-- Quotes should be direct statements from the interviewee that support your answer
-- Keep quotes concise (1-2 sentences max)
-- Format quotes as: "Quote: [exact quote from transcript]"
-- Only include quotes that add value to understanding the answer
-- If no relevant quotes are available, omit the quote section
-"""
+            # Get prompt configuration
+            prompt_config = get_prompt_config()
+            
+            main_prompt = prompt_config.format_prompt("transcript_analysis",
+                                                    context_section=context_section,
+                                                    transcript_text=transcript_text,
+                                                    section_title=section_data['title'],
+                                                    section_questions=section_questions)
             
             full_prompt = f"{main_prompt}\n\n{section_data['title']}:\n{section_questions}"
             
+            # Get OpenAI parameters from config
+            params = prompt_config.get_prompt_parameters("transcript_analysis")
+            
             response = self.client.chat.completions.create(
-                model="gpt-4o",
+                model=params.get("model", "gpt-4o"),
                 messages=[
-                    {"role": "system", "content": "You are a professional analyst extracting structured information from call transcripts. Provide clear, concise answers based only on the transcript content. Include 1-2 relevant quotes per answer where helpful to support your analysis."},
+                    {"role": "system", "content": prompt_config.get_system_message("transcript_analysis")},
                     {"role": "user", "content": full_prompt}
                 ],
-                temperature=0.3,
-                top_p=1.0,
-                max_tokens=4000
+                temperature=params.get("temperature", 0.3),
+                top_p=params.get("top_p", 1.0),
+                max_tokens=params.get("max_tokens", 4000)
             )
             
             # Get the main analysis
@@ -755,8 +749,8 @@ QUOTE REQUIREMENTS:
             best_quotes = self.extract_and_select_best_quotes(
                 section_data['title'] + " " + section_questions,
                 self.results if hasattr(self, 'results') else [],
-                max_quotes_per_expert=3,
-                max_final_quotes=2
+                max_quotes_per_expert=4,
+                max_final_quotes=3
             )
             
             # Add selected quotes to the response
@@ -3803,8 +3797,8 @@ Please ensure the summary is clear, concise, and actionable.
         self, 
         question: str, 
         results: List[Dict], 
-        max_quotes_per_expert: int = 3,
-        max_final_quotes: int = 2,
+        max_quotes_per_expert: int = 4,
+        max_final_quotes: int = 3,
         debug: bool = False
     ) -> List[Dict]:
         """
