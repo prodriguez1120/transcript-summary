@@ -113,8 +113,7 @@ def test_all_prompt_types():
         "theme_identification", 
         "transcript_analysis",
         "company_summary",
-        "quote_scoring",
-        "cross_transcript_analysis"
+        "quote_scoring"
     ]
     
     for expected_type in expected_types:

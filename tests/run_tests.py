@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """
-Test runner for complex logic unit tests
+Test runner for FlexXray Transcript Summarizer
 
-This script runs all the comprehensive unit tests for the complex logic in:
-- quote_analysis_tool.py
-- fuzzy_matching.py  
-- vector_database.py
+This script runs all comprehensive unit tests including:
+- Core Logic: quote_analysis_tool.py, fuzzy_matching.py, vector_database.py
+- Validation & Error Handling: exceptions.py, validation.py, json_utils.py
+- Perspective Analysis: perspective_analysis.py
+- Quote Processing: quote extraction, filtering, and export
+- System Integration: streamlined system and prompt management
 """
 
 import unittest
@@ -20,7 +22,10 @@ sys.path.insert(0, parent_dir)
 def clear_module_cache():
     """Clear module cache to ensure test isolation."""
     # Clear modules that might have state
-    modules_to_clear = ['fuzzy_matching', 'quote_analysis_tool', 'vector_database']
+    modules_to_clear = [
+        'fuzzy_matching', 'quote_analysis_tool', 'vector_database',
+        'exceptions', 'validation', 'json_utils', 'perspective_analysis'
+    ]
     for module_name in modules_to_clear:
         if module_name in sys.modules:
             del sys.modules[module_name]
@@ -33,8 +38,17 @@ def show_help():
     print("  test_file    Run tests from specific test file (without .py extension)")
     print("  --help       Show this help message")
     print("")
+    print("Available Test Categories:")
+    print("  - Core Logic: test_complex_logic, test_fuzzy_logic, test_fuzzy_matching")
+    print("  - Vector Database: test_vector_db_logic, test_vector_db_management")
+    print("  - Quote Processing: test_quote_export, test_quote_filtering, test_speaker_roles")
+    print("  - Validation & Error Handling: test_error_handling, test_perspective_analysis")
+    print("  - System Integration: test_streamlined_system, test_prompt_system")
+    print("")
     print("Examples:")
     print("  python run_tests.py                    # Run all tests")
+    print("  python run_tests.py test_error_handling   # Run validation tests")
+    print("  python run_tests.py test_perspective_analysis   # Run perspective analysis tests")
     print("  python run_tests.py test_fuzzy_logic   # Run specific test file")
     print("  python run_tests.py --help             # Show this help")
 

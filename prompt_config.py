@@ -39,7 +39,7 @@ class PromptConfig:
                 "transcript_analysis": "You are a professional analyst extracting structured information from call transcripts. Provide clear, concise answers based only on the transcript content. Include 1-2 relevant quotes per answer where helpful to support your analysis.",
                 "company_summary": "You are an expert business intelligence analyst. Your task is to process a transcript and generate a structured summary supported by direct quotes.",
                 "quote_scoring": "You are an expert analyst scoring text chunks for relevance to specific questions.",
-                "cross_transcript_analysis": "You are an expert analyst identifying common themes across multiple transcripts."
+
             },
             
             "quote_ranking": {
@@ -258,27 +258,7 @@ Please respond with a JSON array of objects:
                 }
             },
             
-            "cross_transcript_analysis": {
-                "template": """Analyze the following quotes from different transcripts to identify common themes:
 
-{transcripts_data}
-
-Identify 3-5 key themes that appear across multiple transcripts. These should represent insights that are consistent or complementary across different perspectives.
-
-For each theme, provide:
-1. Theme name and description
-2. Key insights that emerge
-3. Which transcripts support this theme
-4. Business implications
-
-Please respond with a structured analysis that can be easily parsed.""",
-                
-                "parameters": {
-                    "model": "gpt-4",
-                    "temperature": 0.3,
-                    "max_tokens": 2000
-                }
-            }
         }
     
     def get_system_message(self, prompt_type: str) -> str:

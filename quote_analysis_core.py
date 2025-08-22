@@ -283,29 +283,48 @@ class QuoteAnalysisTool:
         
         perspectives = results['perspectives']
         total_perspectives = len(perspectives)
-        total_ranked_quotes = 0
+        
+        # Use a set to track unique quotes and avoid double counting
+        unique_ranked_quotes = set()
         selection_stage_breakdown = {}
         
         for perspective_key, perspective_data in perspectives.items():
-            # Count quotes that have been ranked (either in themes or directly in the perspective)
-            if 'themes' in perspective_data:
-                for theme in perspective_data['themes']:
-                    if 'quotes' in theme:
-                        total_ranked_quotes += len(theme['quotes'])
-                        
-                        # Track selection stages
-                        for quote in theme['quotes']:
-                            stage = quote.get('selection_stage', 'unknown')
-                            selection_stage_breakdown[stage] = selection_stage_breakdown.get(stage, 0) + 1
-            
-            # Also count quotes that are directly ranked in the perspective (not just in themes)
+            # Count quotes that are directly ranked in the perspective
             if 'ranked_quotes' in perspective_data:
                 ranked_quotes = perspective_data['ranked_quotes']
                 for quote in ranked_quotes:
-                    if quote.get('selection_stage') in ['openai_ranked', 'openai_failed', 'parsing_failed']:
-                        total_ranked_quotes += 1
-                        stage = quote.get('selection_stage', 'unknown')
-                        selection_stage_breakdown[stage] = selection_stage_breakdown.get(stage, 0) + 1
+                    # Create unique identifier for the quote (using text hash)
+                    quote_text = quote.get('text', '')
+                    quote_id = hash(quote_text) if quote_text else id(quote)
+                    
+                    # Only count if we haven't seen this quote before
+                    if quote_id not in unique_ranked_quotes:
+                        # Count all quotes that went through the ranking pipeline
+                        if quote.get('selection_stage') in ['openai_ranked', 'openai_processed', 'openai_failed', 'parsing_failed']:
+                            unique_ranked_quotes.add(quote_id)
+                            stage = quote.get('selection_stage', 'unknown')
+                            selection_stage_breakdown[stage] = selection_stage_breakdown.get(stage, 0) + 1
+            
+            # Count quotes from themes (only if not already counted in ranked_quotes)
+            if 'themes' in perspective_data:
+                for theme in perspective_data['themes']:
+                    if 'quotes' in theme:
+                        for quote in theme['quotes']:
+                            # Create unique identifier for the quote
+                            quote_text = quote.get('text', '')
+                            quote_id = hash(quote_text) if quote_text else id(quote)
+                            
+                            # Only count if we haven't seen this quote before
+                            if quote_id not in unique_ranked_quotes:
+                                # Check if quote has selection stage, openai_rank, or relevance_score
+                                if (quote.get('selection_stage') or 
+                                    quote.get('openai_rank') or 
+                                    quote.get('relevance_score')):
+                                    unique_ranked_quotes.add(quote_id)
+                                    stage = quote.get('selection_stage', 'theme_selected')
+                                    selection_stage_breakdown[stage] = selection_stage_breakdown.get(stage, 0) + 1
+        
+        total_ranked_quotes = len(unique_ranked_quotes)
         
         # Calculate ranking coverage
         all_quotes = results.get('all_quotes', [])

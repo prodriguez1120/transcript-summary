@@ -60,10 +60,8 @@ The FlexXray Transcript Summarizer now features a **modular prompt system** that
 - **Use Case**: Finding most relevant content for analysis
 - **Parameters**: model, temperature, max_tokens
 
-### 6. **cross_transcript_analysis**
-- **Purpose**: Identify themes across multiple transcripts
-- **Use Case**: Finding patterns across different interviews
-- **Parameters**: model, temperature, max_tokens
+
+
 
 ## Quick Start
 

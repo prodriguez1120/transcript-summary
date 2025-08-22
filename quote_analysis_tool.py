@@ -1,3 +1,4 @@
+
 #!/usr/bin/env python3
 """
 Quote Analysis Tool for FlexXray Transcripts
@@ -20,9 +21,8 @@ import time
 from datetime import datetime
 import logging
 
-# Load environment variables from .env file
-from dotenv import load_dotenv
-load_dotenv()
+# Load environment variables from centralized configuration
+from env_config import get_env_config, get_openai_api_key
 
 # Import logging configuration
 from logging_config import setup_logger
@@ -53,7 +53,10 @@ class ModularQuoteAnalysisTool(QuoteAnalysisTool):
         
         self.vector_db_manager = VectorDatabaseManager(chroma_persist_directory)
         
-        self.perspective_analyzer = PerspectiveAnalyzer(self.client)
+        # Use the API key from the parent class instead of calling os.getenv again
+        # Use the API key from the parent class (which comes from centralized config)
+        self.perspective_analyzer = PerspectiveAnalyzer(api_key=self.api_key)
+        self.perspective_analyzer.set_vector_db_manager(self.vector_db_manager)
         
         self.export_manager = ExportManager()
         
@@ -137,7 +140,7 @@ class ModularQuoteAnalysisTool(QuoteAnalysisTool):
             logger.warning("No expert quotes found after filtering")
             return {}
         
-        # Get diverse quotes for analysis
+        # Get diverse quotes for analysis - increase to 50 for better quote selection
         diverse_quotes = self._get_diverse_quotes(expert_quotes, "summary", 50)
         
         # Create summary prompt
@@ -185,10 +188,23 @@ class ModularQuoteAnalysisTool(QuoteAnalysisTool):
         
         # The new prompt expects transcript content, so we'll format the quotes as transcript content
         transcript_content = ""
-        for i, quote in enumerate(quotes[:50], 1):  # Limit to 50 quotes for summary
+        for i, quote in enumerate(quotes[:50], 1):  # Limit to 50 quotes for summary to provide better selection
             quote_text = quote.get('text', '')
-            speaker_info = quote.get('speaker_info', 'Unknown Speaker')
+            
+            # Use the correct fields from the main analysis quotes
+            speaker_role = quote.get('speaker_role', 'Unknown')
             transcript_name = quote.get('transcript_name', 'Unknown Transcript')
+            
+            # Create a proper speaker identifier
+            if speaker_role == 'expert':
+                # Extract speaker name from transcript name if possible
+                if ' - ' in transcript_name:
+                    speaker_name = transcript_name.split(' - ')[0]
+                else:
+                    speaker_name = transcript_name.replace('.docx', '')
+                speaker_info = f"{speaker_name} (Expert)"
+            else:
+                speaker_info = f"{speaker_role}"
             
             transcript_content += f"\nQuote {i}: \"{quote_text}\" - {speaker_info} from {transcript_name}"
         
@@ -862,15 +878,129 @@ Please provide a JSON response with key_takeaways, strengths, and weaknesses sec
         
         return results
 
+    def test_rag_functionality(self, perspective_key: str = "market_position") -> Dict[str, Any]:
+        """Test the RAG functionality to demonstrate improved quote retrieval."""
+        print(f"\n🧪 Testing RAG Functionality for perspective: {perspective_key}")
+        print("=" * 60)
+        
+        if not self.vector_db_manager.quotes_collection:
+            print("❌ Vector database not available for RAG testing")
+            return {}
+        
+        # Get perspective data
+        if perspective_key not in self.key_perspectives:
+            print(f"❌ Perspective '{perspective_key}' not found")
+            return {}
+        
+        perspective_data = self.key_perspectives[perspective_key]
+        print(f"📋 Perspective: {perspective_data['title']}")
+        print(f"🎯 Focus Areas: {', '.join(perspective_data['focus_areas'])}")
+        
+        # Test vector database search
+        print(f"\n🔍 Testing Vector Database Search...")
+        try:
+            # Test semantic search for each focus area
+            for focus_area in perspective_data['focus_areas'][:3]:  # Test first 3 focus areas
+                print(f"\n  Searching for: '{focus_area}'")
+                
+                # Get quotes using vector database
+                vector_results = self.vector_db_manager.semantic_search_quotes(
+                    query=focus_area,
+                    n_results=5,
+                    filter_metadata={'speaker_role': 'expert'}
+                )
+                
+                print(f"    Found {len(vector_results)} relevant quotes")
+                
+                # Show top result
+                if vector_results:
+                    top_quote = vector_results[0]
+                    print(f"    Top result: '{top_quote.get('text', '')[:80]}...'")
+                    print(f"    Distance score: {top_quote.get('distance', 'N/A'):.4f}")
+                    print(f"    Source: {top_quote.get('metadata', {}).get('transcript_name', 'Unknown')}")
+        
+        except Exception as e:
+            print(f"    ❌ Error in vector search: {e}")
+        
+        # Test perspective analysis with RAG
+        print(f"\n🤖 Testing RAG-Enhanced Perspective Analysis...")
+        try:
+            # Get some sample quotes for testing
+            sample_quotes = []
+            for focus_area in perspective_data['focus_areas'][:2]:
+                results = self.vector_db_manager.semantic_search_quotes(
+                    query=focus_area,
+                    n_results=10,
+                    filter_metadata={'speaker_role': 'expert'}
+                )
+                sample_quotes.extend(results[:5])  # Take top 5 from each
+            
+            if sample_quotes:
+                print(f"  Retrieved {len(sample_quotes)} sample quotes for analysis")
+                
+                # Test the perspective analyzer
+                result = self.analyze_perspective_with_quotes(
+                    perspective_key, perspective_data, sample_quotes
+                )
+                
+                print(f"  ✅ Analysis completed successfully")
+                print(f"  📊 Total quotes analyzed: {result.get('total_quotes', 0)}")
+                print(f"  🎭 Themes identified: {len(result.get('themes', []))}")
+                
+                return result
+            else:
+                print("  ❌ No sample quotes found for analysis")
+                return {}
+                
+        except Exception as e:
+            print(f"  ❌ Error in RAG analysis: {e}")
+            return {}
+    
+    def get_rag_statistics(self) -> Dict[str, Any]:
+        """Get statistics about the RAG system performance."""
+        stats = {
+            'vector_db_available': False,
+            'total_quotes_stored': 0,
+            'rag_functionality': False,
+            'search_capabilities': []
+        }
+        
+        try:
+            if self.vector_db_manager and self.vector_db_manager.quotes_collection:
+                stats['vector_db_available'] = True
+                
+                # Get database stats
+                db_stats = self.vector_db_manager.get_vector_database_stats()
+                stats['total_quotes_stored'] = db_stats.get('total_quotes', 0)
+                
+                # Check RAG functionality
+                if hasattr(self.perspective_analyzer, 'vector_db_manager') and self.perspective_analyzer.vector_db_manager:
+                    stats['rag_functionality'] = True
+                
+                # List search capabilities
+                stats['search_capabilities'] = [
+                    'semantic_search_quotes',
+                    'search_quotes_with_speaker_filter', 
+                    'get_quotes_by_perspective'
+                ]
+                
+        except Exception as e:
+            print(f"Error getting RAG statistics: {e}")
+        
+        return stats
+
 
 def main():
     """Main function to run the quote analysis tool."""
     print("FlexXray Quote Analysis Tool (Modular Version)")
     print("=" * 50)
     
-    # Check for API key
-    if not os.getenv('OPENAI_API_KEY'):
-        logger.error("Please set OPENAI_API_KEY environment variable")
+    # Check for API key using centralized configuration
+    try:
+        api_key = get_openai_api_key()
+        logger.info("OpenAI API key loaded successfully")
+    except ValueError as e:
+        logger.error(f"Configuration error: {e}")
         return
     
     # Initialize the tool
@@ -949,7 +1079,7 @@ def main():
         logger.info(f"Average context per quote: {speaker_stats.get('average_context_per_quote', 0):.1f} sentences")
         
         # Show ranking statistics
-        ranking_stats = analyzer.get_quote_ranking_statistics(results['perspectives'])
+        ranking_stats = analyzer.get_quote_ranking_statistics(results)
         logger.info("OpenAI Ranking Statistics:")
         logger.info(f"Total Perspectives: {ranking_stats['total_perspectives']}")
         logger.info(f"Total Quotes Ranked: {ranking_stats['total_ranked_quotes']}")
