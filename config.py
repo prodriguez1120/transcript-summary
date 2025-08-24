@@ -19,16 +19,17 @@ OUTPUT_DIR = PROJECT_ROOT / "Outputs"
 # Ensure output directory exists
 OUTPUT_DIR.mkdir(exist_ok=True)
 
+
 # File naming patterns
 def get_output_path(filename: str) -> Path:
     """Generate output file path in the Outputs directory."""
     return OUTPUT_DIR / filename
 
+
 # Common output filenames
 OUTPUT_FILES = {
     "quote_analysis_json": "FlexXray_quote_analysis.json",
-    "quote_analysis_txt": "FlexXray_quote_analysis.txt", 
-
+    "quote_analysis_txt": "FlexXray_quote_analysis.txt",
     "transcript_analysis_json": "FlexXray_transcript_analysis_results.json",
     "transcript_analysis_txt": "FlexXray_transcript_analysis_results.txt",
     "transcript_analysis_docx": "FlexXray_transcript_analysis_results.docx",
@@ -39,13 +40,15 @@ OUTPUT_FILES = {
     "concept_attribution_analysis_txt": "FlexXray_concept_attribution_analysis.txt",
     "concept_attribution_analysis_docx": "FlexXray_concept_attribution_analysis.docx",
     "company_summary_page_txt": "FlexXray_Company_Summary_Page.txt",
-    "company_summary_page_xlsx": "FlexXray_Company_Summary_Page.xlsx"
+    "company_summary_page_xlsx": "FlexXray_Company_Summary_Page.xlsx",
 }
+
 
 # Get output paths
 def get_output_paths():
     """Get all output file paths."""
     return {key: get_output_path(filename) for key, filename in OUTPUT_FILES.items()}
+
 
 # Print configuration info
 if __name__ == "__main__":
