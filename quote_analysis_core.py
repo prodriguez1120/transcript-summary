@@ -4,13 +4,16 @@ Core Quote Analysis Tool for FlexXray Transcripts
 
 This module contains the main QuoteAnalysisTool class with basic functionality
 and initialization. Other modules provide specialized functionality.
+
+IMPORTANT: ChromaDB collection creation is centralized in VectorDatabaseManager
+to prevent metadata mismatches and ensure consistent collection configuration.
 """
 
 import os
 import json
 import re
 from openai import OpenAI
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Tuple, Optional
 from pathlib import Path
 import time
 from dotenv import load_dotenv
@@ -37,21 +40,20 @@ except ImportError as e:
     EXCEL_AVAILABLE = False
     print(f"openpyxl library not available: {e}")
 
-# Check if ChromaDB is available
+# Import VectorDatabaseManager for centralized ChromaDB operations
 try:
-    import chromadb
-    from chromadb.config import Settings
-    CHROMA_AVAILABLE = True
-    print("ChromaDB library is available")
+    from vector_database import VectorDatabaseManager
+    VECTOR_DB_AVAILABLE = True
+    print("VectorDatabaseManager is available")
 except ImportError as e:
-    CHROMA_AVAILABLE = False
-    print(f"ChromaDB library not available: {e}")
+    VECTOR_DB_AVAILABLE = False
+    print(f"VectorDatabaseManager not available: {e}")
 
 # Load environment variables
 load_dotenv()
 
 class QuoteAnalysisTool:
-    def __init__(self, api_key: str = None, chroma_persist_directory: str = "./chroma_db"):
+    def __init__(self, api_key: str = None, chroma_persist_directory: str = "./chroma_db", min_quote_length: int = 10):
         """Initialize the quote analysis tool with OpenAI API key and ChromaDB."""
         # Set up logger
         self.logger = logging.getLogger(__name__)
@@ -66,48 +68,56 @@ class QuoteAnalysisTool:
         
         self.logger.info("Initializing QuoteAnalysisTool")
         
-        # Initialize ChromaDB if available
-        if CHROMA_AVAILABLE:
+        # Initialize Vector Database Manager if available
+        if VECTOR_DB_AVAILABLE:
             try:
-                self.logger.info(f"Initializing ChromaDB at {chroma_persist_directory}")
-                self.chroma_client = chromadb.PersistentClient(path=chroma_persist_directory)
+                self.logger.info(f"Initializing Vector Database Manager at {chroma_persist_directory}")
+                self.vector_db_manager = VectorDatabaseManager(chroma_persist_directory=chroma_persist_directory)
                 
-                # Create collections for different types of data
-                self.collection = self.chroma_client.get_or_create_collection(
-                    name="transcript_chunks",
-                    metadata={"hnsw:space": "cosine"}
-                )
+                # Get references to collections from the centralized manager
+                self.chroma_client = self.vector_db_manager.chroma_client
+                self.collection = self.vector_db_manager.collection
+                self.quotes_collection = self.vector_db_manager.quotes_collection
                 
-                # Dedicated collection for quotes with enhanced metadata
-                self.quotes_collection = self.chroma_client.get_or_create_collection(
-                    name="flexray_quotes",
-                    metadata={
-                        "hnsw:space": "cosine",
-                        "description": "FlexXray interview quotes with sentiment and perspective metadata"
-                    }
-                )
-                
-                self.logger.info(f"ChromaDB initialized successfully at {chroma_persist_directory}")
-                quote_count = self.quotes_collection.count()
-                self.logger.info(f"Quotes collection has {quote_count} existing quotes")
+                self.logger.info(f"Vector Database Manager initialized successfully at {chroma_persist_directory}")
+                if self.quotes_collection:
+                    quote_count = self.quotes_collection.count()
+                    self.logger.info(f"Quotes collection has {quote_count} existing quotes")
                 
             except Exception as e:
-                self.logger.error(f"ChromaDB initialization failed: {e}")
+                self.logger.error(f"Vector Database Manager initialization failed: {e}")
+                self.vector_db_manager = None
                 self.chroma_client = None
                 self.collection = None
                 self.quotes_collection = None
         else:
+            self.vector_db_manager = None
             self.chroma_client = None
             self.collection = None
             self.quotes_collection = None
-            self.logger.warning("ChromaDB not available. Quote analysis will be limited.")
+            self.logger.warning("Vector Database Manager not available. Quote analysis will be limited.")
         
         # Quote analysis parameters
         self.max_quotes_per_category = 5
-        self.min_quote_length = 20
+        self.min_quote_length = min_quote_length  # Now configurable via constructor
         self.max_quote_length = 200
         
         self.logger.info("QuoteAnalysisTool initialization completed")
+
+    def set_min_quote_length(self, min_length: int) -> None:
+        """Set the minimum quote length threshold."""
+        if min_length < 1:
+            raise ValueError("Minimum quote length must be at least 1 character")
+        self.min_quote_length = min_length
+        self.logger.info(f"Minimum quote length set to {min_length}")
+
+    def get_min_quote_length(self) -> int:
+        """Get the current minimum quote length threshold."""
+        return self.min_quote_length
+
+    def get_vector_db_manager(self) -> Optional[VectorDatabaseManager]:
+        """Get the vector database manager for advanced operations."""
+        return self.vector_db_manager
 
     def get_expert_quotes_only(self, quotes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Filter quotes to include only expert quotes, excluding interviewer questions."""
@@ -336,3 +346,27 @@ class QuoteAnalysisTool:
             'ranking_coverage': ranking_coverage,
             'selection_stage_breakdown': selection_stage_breakdown
         }
+
+    def store_quotes_in_vector_db(self, quotes: List[Dict[str, Any]], batch_size: int = 100) -> bool:
+        """Store quotes in the vector database using the centralized manager."""
+        if not self.vector_db_manager:
+            self.logger.warning("Vector Database Manager not available for quote storage")
+            return False
+        
+        try:
+            return self.vector_db_manager.store_quotes_in_vector_db(quotes, batch_size)
+        except Exception as e:
+            self.logger.error(f"Error storing quotes in vector database: {e}")
+            return False
+
+    def search_quotes_semantically(self, query: str, n_results: int = 10) -> List[Dict[str, Any]]:
+        """Search quotes semantically using the centralized vector database manager."""
+        if not self.vector_db_manager:
+            self.logger.warning("Vector Database Manager not available for semantic search")
+            return []
+        
+        try:
+            return self.vector_db_manager.semantic_search_quotes(query, n_results)
+        except Exception as e:
+            self.logger.error(f"Error searching quotes semantically: {e}")
+            return []

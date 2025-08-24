@@ -3,8 +3,13 @@
 Test script to demonstrate the new vector database duplicate detection and management features.
 """
 
-from quote_analysis_tool import QuoteAnalysisTool
 import os
+import sys
+
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from quote_analysis_tool import ModularQuoteAnalysisTool
 
 def test_duplicate_detection():
     """Test the duplicate detection functionality."""
@@ -13,7 +18,7 @@ def test_duplicate_detection():
     
     # Initialize the tool
     try:
-        analyzer = QuoteAnalysisTool()
+        analyzer = ModularQuoteAnalysisTool()
         print("✓ Quote analysis tool initialized successfully")
     except Exception as e:
         print(f"✗ Error initializing tool: {e}")
@@ -28,14 +33,12 @@ def test_duplicate_detection():
         return
     
     print(f"Current Database Stats:")
+    print(f"  Available: {stats['available']}")
     print(f"  Total quotes: {stats['total_quotes']}")
-    print(f"  Transcripts: {len(stats['transcripts'])}")
-    print(f"  Speaker roles: {stats['speaker_roles']}")
-    print(f"  Quotes with context: {stats['quotes_with_context']} ({stats.get('context_percentage', 0):.1f}%)")
-    print(f"  Average context per quote: {stats.get('average_context_count', 0):.1f}")
+    print(f"  Collections: {len(stats['collections'])}")
     
-    if stats['transcripts']:
-        print(f"  Transcript files: {', '.join(stats['transcripts'][:3])}{'...' if len(stats['transcripts']) > 3 else ''}")
+    if stats['collections']:
+        print(f"  Collection names: {', '.join(stats['collections'][:3])}{'...' if len(stats['collections']) > 3 else ''}")
 
 def test_database_management():
     """Test database management functions."""
@@ -43,7 +46,7 @@ def test_database_management():
     print("=" * 50)
     
     try:
-        analyzer = QuoteAnalysisTool()
+        analyzer = ModularQuoteAnalysisTool()
         print("✓ Tool initialized")
         
         # Show available management functions

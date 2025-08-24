@@ -13,6 +13,11 @@ import json
 from unittest.mock import Mock, patch, MagicMock
 from datetime import datetime
 from typing import List, Dict, Any
+import sys
+import os
+
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Import the classes we want to test
 from quote_analysis_tool import ModularQuoteAnalysisTool

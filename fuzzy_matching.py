@@ -66,7 +66,7 @@ class FuzzyMatcher:
         # First try exact pattern matching
         for pattern in topic_patterns:
             if re.search(pattern, text_lower, re.IGNORECASE):
-                self.logger.debug(f"REGEX MATCH: pattern='{pattern}' matched text='{text_lower}'")
+                logger.debug(f"REGEX MATCH: pattern='{pattern}' matched text='{text_lower}'")
                 return True, 100.0, pattern
         
         # Try fuzzy string matching

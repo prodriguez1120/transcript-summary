@@ -11,14 +11,14 @@ from pathlib import Path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from streamlined_quote_analysis import StreamlinedQuoteAnalysis
-from quote_analysis_tool import QuoteAnalysisTool
+from quote_analysis_tool import ModularQuoteAnalysisTool
 
 def load_existing_quotes():
     """Load quotes from existing analysis tool."""
     print("Loading existing quote extraction system...")
     
     # Initialize the existing tool
-    existing_tool = QuoteAnalysisTool()
+    existing_tool = ModularQuoteAnalysisTool()
     
     # Get the transcript directory
     transcript_dir = "FlexXray Transcripts"

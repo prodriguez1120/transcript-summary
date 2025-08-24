@@ -16,6 +16,10 @@ from typing import List, Dict, Any
 import tempfile
 import shutil
 import os
+import sys
+
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Import the classes we want to test
 from vector_database import (

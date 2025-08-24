@@ -128,13 +128,23 @@ class ExportManager:
                     f.write("KEY TAKEAWAYS\n")
                     f.write("-" * 20 + "\n")
                     for i, takeaway in enumerate(takeaways, 1):
-                        f.write(f"{i}. {takeaway.get('insight', '')}\n")
-                        if takeaway.get('supporting_quotes'):
+                        # Handle both 'insight' and 'theme' fields
+                        insight = takeaway.get('insight', takeaway.get('theme', ''))
+                        f.write(f"{i}. {insight}\n")
+                        
+                        # Handle both 'supporting_quotes' and 'quotes' fields
+                        quotes = takeaway.get('supporting_quotes', takeaway.get('quotes', []))
+                        if quotes:
                             f.write("   Supporting quotes:\n")
-                            for quote in takeaway['supporting_quotes'][:2]:  # Limit to 2 quotes
-                                # Use formatted_text if available, otherwise fall back to text
-                                quote_text = quote.get('formatted_text', quote.get('text', ''))
-                                f.write(f"     - {quote_text}\n")
+                            for quote in quotes[:2]:  # Limit to 2 quotes
+                                if isinstance(quote, dict):
+                                    # Use formatted_text if available, otherwise fall back to text
+                                    quote_text = quote.get('formatted_text', quote.get('text', quote.get('quote', '')))
+                                    speaker = quote.get('speaker', quote.get('speaker_info', 'Unknown'))
+                                    document = quote.get('document', quote.get('transcript_name', 'Unknown'))
+                                    f.write(f"     - \"{quote_text}\" - {speaker} from {document}\n")
+                                else:
+                                    f.write(f"     - {quote}\n")
                         f.write("\n")
                 
                 # Write strengths
@@ -143,13 +153,23 @@ class ExportManager:
                     f.write("STRENGTHS\n")
                     f.write("-" * 15 + "\n")
                     for i, strength in enumerate(strengths, 1):
-                        f.write(f"{i}. {strength.get('insight', '')}\n")
-                        if strength.get('supporting_quotes'):
+                        # Handle both 'insight' and 'theme' fields
+                        insight = strength.get('insight', strength.get('theme', ''))
+                        f.write(f"{i}. {insight}\n")
+                        
+                        # Handle both 'supporting_quotes' and 'quotes' fields
+                        quotes = strength.get('supporting_quotes', strength.get('quotes', []))
+                        if quotes:
                             f.write("   Supporting quotes:\n")
-                            for quote in strength['supporting_quotes'][:2]:  # Limit to 2 quotes
-                                # Use formatted_text if available, otherwise fall back to text
-                                quote_text = quote.get('formatted_text', quote.get('text', ''))
-                                f.write(f"     - {quote_text}\n")
+                            for quote in quotes[:2]:  # Limit to 2 quotes
+                                if isinstance(quote, dict):
+                                    # Use formatted_text if available, otherwise fall back to text
+                                    quote_text = quote.get('formatted_text', quote.get('text', quote.get('quote', '')))
+                                    speaker = quote.get('speaker', quote.get('speaker_info', 'Unknown'))
+                                    document = quote.get('document', quote.get('transcript_name', 'Unknown'))
+                                    f.write(f"     - \"{quote_text}\" - {speaker} from {document}\n")
+                                else:
+                                    f.write(f"     - {quote}\n")
                         f.write("\n")
                 
                 # Write weaknesses
@@ -158,13 +178,23 @@ class ExportManager:
                     f.write("WEAKNESSES\n")
                     f.write("-" * 15 + "\n")
                     for i, weakness in enumerate(weaknesses, 1):
-                        f.write(f"{i}. {weakness.get('insight', '')}\n")
-                        if weakness.get('supporting_quotes'):
+                        # Handle both 'insight' and 'theme' fields
+                        insight = weakness.get('insight', weakness.get('theme', ''))
+                        f.write(f"{i}. {insight}\n")
+                        
+                        # Handle both 'supporting_quotes' and 'quotes' fields
+                        quotes = weakness.get('supporting_quotes', weakness.get('quotes', []))
+                        if quotes:
                             f.write("   Supporting quotes:\n")
-                            for quote in weakness['supporting_quotes'][:2]:  # Limit to 2 quotes
-                                # Use formatted_text if available, otherwise fall back to text
-                                quote_text = quote.get('formatted_text', quote.get('text', ''))
-                                f.write(f"     - {quote_text}\n")
+                            for quote in quotes[:2]:  # Limit to 2 quotes
+                                if isinstance(quote, dict):
+                                    # Use formatted_text if available, otherwise fall back to text
+                                    quote_text = quote.get('formatted_text', quote.get('text', quote.get('quote', '')))
+                                    speaker = quote.get('speaker', quote.get('speaker_info', 'Unknown'))
+                                    document = quote.get('document', quote.get('transcript_name', 'Unknown'))
+                                    f.write(f"     - \"{quote_text}\" - {speaker} from {document}\n")
+                                else:
+                                    f.write(f"     - {quote}\n")
                         f.write("\n")
             
             print(f"Company summary page exported to text: {output_file}")

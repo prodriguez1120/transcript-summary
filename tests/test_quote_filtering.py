@@ -7,8 +7,12 @@ This script tests the QuoteTopicFilter functionality.
 
 import sys
 import os
-from quote_topic_filter import QuoteTopicFilter
 import json
+
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from quote_topic_filter import QuoteTopicFilter
 
 def test_keyword_filtering():
     """Test keyword-based quote filtering."""

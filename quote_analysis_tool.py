@@ -1,4 +1,6 @@
 
+
+
 #!/usr/bin/env python3
 """
 Quote Analysis Tool for FlexXray Transcripts
@@ -52,6 +54,21 @@ class ModularQuoteAnalysisTool(QuoteAnalysisTool):
         )
         
         self.vector_db_manager = VectorDatabaseManager(chroma_persist_directory)
+        
+        # Test vector database initialization and log stats
+        try:
+            db_stats = self.vector_db_manager.get_vector_database_stats()
+            self.logger.info(f"Vector database initialization test: {db_stats}")
+            if db_stats.get('available'):
+                self.logger.info(f"✅ ChromaDB path valid, {db_stats.get('total_quotes', 0)} quotes available")
+                if hasattr(self.vector_db_manager, 'embedding_function') and self.vector_db_manager.embedding_function:
+                    self.logger.info(f"✅ Using OpenAI embeddings: {self.vector_db_manager.embedding_function.model_name}")
+                else:
+                    self.logger.warning("⚠️ Using ChromaDB default embeddings (OpenAI not configured)")
+            else:
+                self.logger.warning("❌ Vector database not available")
+        except Exception as e:
+            self.logger.error(f"Vector database test failed: {e}")
         
         # Use the API key from the parent class instead of calling os.getenv again
         # Use the API key from the parent class (which comes from centralized config)
@@ -107,6 +124,14 @@ class ModularQuoteAnalysisTool(QuoteAnalysisTool):
         """Get statistics about the vector database using the vector database manager."""
         return self.vector_db_manager.get_vector_database_stats()
 
+    def verify_embeddings(self, sample_size: int = 3) -> Dict[str, Any]:
+        """Verify that stored documents actually have embeddings."""
+        return self.vector_db_manager.verify_stored_embeddings(sample_size)
+
+    def force_embedding_function_reattachment(self) -> bool:
+        """Force reattachment of embedding functions to collections."""
+        return self.vector_db_manager.force_embedding_function_reattachment()
+
     def get_quotes_by_perspective(self, perspective_key: str, perspective_data: dict, n_results: int = 20) -> List[Dict[str, Any]]:
         """Get quotes relevant to a specific perspective using the vector database manager."""
         return self.vector_db_manager.get_quotes_by_perspective(perspective_key, perspective_data, n_results)
@@ -114,6 +139,65 @@ class ModularQuoteAnalysisTool(QuoteAnalysisTool):
     def categorize_quotes_by_sentiment(self, quotes: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
         """Categorize quotes by sentiment using the vector database manager."""
         return self.vector_db_manager.categorize_quotes_by_sentiment(quotes)
+
+    def _verify_quotes_storage(self, quotes: List[Dict[str, Any]]) -> None:
+        """Verify that quotes are stored properly by querying back known quotes."""
+        if not quotes or not self.vector_db_manager.quotes_collection:
+            return
+        
+        try:
+            self.logger.info("🔍 Verifying quotes storage in vector database...")
+            
+            # Test with a few sample quotes to verify storage
+            test_quotes = quotes[:3]  # Test first 3 quotes
+            
+            for i, quote in enumerate(test_quotes):
+                quote_text = quote.get('text', '').strip()
+                if not quote_text:
+                    continue
+                
+                # Use first 50 characters as search query
+                search_query = quote_text[:50]
+                transcript_name = quote.get('transcript_name', 'Unknown')
+                
+                self.logger.info(f"  Testing quote {i+1} from {transcript_name}...")
+                
+                # Search for this specific quote
+                search_results = self.vector_db_manager.semantic_search_quotes(
+                    query=search_query,
+                    n_results=5
+                )
+                
+                # Check if we found the original quote
+                found_original = False
+                for result in search_results:
+                    if (result.get('text', '').strip() == quote_text or 
+                        result.get('metadata', {}).get('transcript_name') == transcript_name):
+                        found_original = True
+                        distance = result.get('distance', 'N/A')
+                        self.logger.info(f"    ✅ Quote found! Distance: {distance}")
+                        break
+                
+                if not found_original:
+                    self.logger.warning(f"    ⚠️ Quote not found in search results")
+                
+                # Also test exact text search
+                exact_results = self.vector_db_manager.semantic_search_quotes(
+                    query=f'"{quote_text}"',  # Exact phrase search
+                    n_results=3
+                )
+                
+                if exact_results:
+                    self.logger.info(f"    ✅ Exact text search successful")
+                else:
+                    self.logger.warning(f"    ⚠️ Exact text search failed")
+            
+            # Get final database stats
+            final_stats = self.vector_db_manager.get_vector_database_stats()
+            self.logger.info(f"✅ Storage verification complete. Database now contains {final_stats.get('total_quotes', 0)} quotes")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Quote storage verification failed: {e}")
 
     def analyze_perspective_with_quotes(self, perspective_key: str, perspective_data: dict,
                                       all_quotes: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -123,11 +207,11 @@ class ModularQuoteAnalysisTool(QuoteAnalysisTool):
         )
 
     def generate_company_summary_page(self, all_quotes: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """Generate a comprehensive company summary page using OpenAI."""
+        """Generate a comprehensive company summary page using OpenAI with batch processing."""
         if not all_quotes:
             return {}
         
-        logger.info("Generating company summary page using OpenAI...")
+        logger.info("Generating company summary page using OpenAI with batch processing...")
         
         # Clean and validate quotes
         cleaned_quotes = self._clean_and_validate_quotes(all_quotes)
@@ -140,20 +224,28 @@ class ModularQuoteAnalysisTool(QuoteAnalysisTool):
             logger.warning("No expert quotes found after filtering")
             return {}
         
-        # Get diverse quotes for analysis - increase to 50 for better quote selection
-        diverse_quotes = self._get_diverse_quotes(expert_quotes, "summary", 50)
+        # Get diverse quotes for analysis - use batch processing to handle more quotes
+        diverse_quotes = self._get_diverse_quotes(expert_quotes, "summary", 60)  # Increased to 60 for better selection
         
-        # Create summary prompt
-        summary_prompt = self._create_summary_prompt(diverse_quotes)
+        # Use direct method with larger quote set for better results
+        return self._generate_company_summary_direct(diverse_quotes)
+    
+    def _generate_company_summary_direct(self, quotes: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Generate company summary directly without batch processing."""
+        if not quotes:
+            return {}
         
-        # Get prompt configuration
-        prompt_config = get_prompt_config()
+        logger.info(f"Generating company summary directly with {len(quotes)} quotes")
         
         try:
-            # Call OpenAI for summary generation
-            # Get OpenAI parameters from config
+            # Create summary prompt
+            summary_prompt = self._create_summary_prompt(quotes)
+            
+            # Get prompt configuration
+            prompt_config = get_prompt_config()
             params = prompt_config.get_prompt_parameters("company_summary")
             
+            # Call OpenAI for summary generation
             response = self.client.chat.completions.create(
                 model=params.get("model", "gpt-4"),
                 messages=[
@@ -165,20 +257,227 @@ class ModularQuoteAnalysisTool(QuoteAnalysisTool):
             )
             
             # Parse summary response
-            summary_data = self._parse_summary_response(response.choices[0].message.content, diverse_quotes)
-            
-            logger.info("Company summary page generated successfully")
-            return summary_data
-            
-        except (ValueError, TypeError) as e:
-            logger.error(f"Data validation error in company summary generation: {e}")
-            return {}
-        except ConnectionError as e:
-            logger.error(f"OpenAI API connection error: {e}")
-            return {}
+            response_content = response.choices[0].message.content
+            if response_content:
+                summary_data = self._parse_summary_response(response_content, quotes)
+                logger.info("Company summary page generated successfully")
+                return summary_data
+            else:
+                logger.error("Empty response from OpenAI")
+                return {}
+                
         except Exception as e:
-            logger.error(f"Unexpected error in company summary generation: {e}")
+            logger.error(f"Error in company summary generation: {e}")
             return {}
+    
+    def _generate_company_summary_with_batching(self, quotes: List[Dict[str, Any]], batch_size: int = 25) -> Dict[str, Any]:
+        """Generate company summary using batch processing to stay within token limits."""
+        if not quotes:
+            return {}
+        
+        logger.info(f"Using batch processing for company summary generation with batch size {batch_size}")
+        
+        # Calculate number of batches
+        total_quotes = len(quotes)
+        num_batches = (total_quotes + batch_size - 1) // batch_size
+        
+        logger.info(f"Processing {total_quotes} quotes in {num_batches} batches")
+        
+        # Process each batch
+        batch_results = []
+        for batch_num in range(num_batches):
+            start_idx = batch_num * batch_size
+            end_idx = min(start_idx + batch_size, total_quotes)
+            batch_quotes = quotes[start_idx:end_idx]
+            
+            logger.info(f"Processing batch {batch_num + 1}/{num_batches} with {len(batch_quotes)} quotes")
+            
+            try:
+                # Generate summary for this batch
+                batch_summary = self._generate_single_batch_summary(batch_quotes, batch_num + 1)
+                if batch_summary:
+                    batch_results.append(batch_summary)
+                    logger.info(f"✅ Batch {batch_num + 1} completed successfully")
+                else:
+                    logger.warning(f"⚠️ Batch {batch_num + 1} failed to generate summary")
+                
+                # Wait between batches to avoid rate limiting
+                if batch_num < num_batches - 1:
+                    time.sleep(1.5)
+                    
+            except Exception as e:
+                logger.error(f"❌ Error processing batch {batch_num + 1}: {e}")
+                continue
+        
+        # Combine batch results into final summary
+        if not batch_results:
+            logger.error("No batch results generated")
+            return {}
+        
+        logger.info(f"Combining {len(batch_results)} batch results into final summary")
+        final_summary = self._combine_batch_summaries(batch_results, quotes)
+        
+        return final_summary
+    
+    def _generate_single_batch_summary(self, batch_quotes: List[Dict[str, Any]], batch_num: int) -> Dict[str, Any]:
+        """Generate summary for a single batch of quotes."""
+        try:
+            # Create summary prompt for this batch
+            summary_prompt = self._create_summary_prompt(batch_quotes)
+            
+            # Get prompt configuration
+            prompt_config = get_prompt_config()
+            params = prompt_config.get_prompt_parameters("company_summary")
+            
+            # Call OpenAI for this batch
+            response = self.client.chat.completions.create(
+                model=params.get("model", "gpt-4"),
+                messages=[
+                    {"role": "system", "content": prompt_config.get_system_message("company_summary")},
+                    {"role": "user", "content": summary_prompt}
+                ],
+                temperature=params.get("temperature", 0.3),
+                max_tokens=params.get("max_tokens", 3000)
+            )
+            
+            # Parse batch response
+            batch_data = self._parse_summary_response(response.choices[0].message.content, batch_quotes)
+            batch_data['batch_number'] = batch_num
+            batch_data['quotes_processed'] = len(batch_quotes)
+            
+            return batch_data
+            
+        except Exception as e:
+            logger.error(f"Error generating batch {batch_num} summary: {e}")
+            return {}
+    
+    def _combine_batch_summaries(self, batch_results: List[Dict[str, Any]], all_quotes: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Combine multiple batch summaries into a final comprehensive summary."""
+        logger.info("Combining batch summaries...")
+        
+        # Initialize final summary structure
+        final_summary = self._create_structured_data_model()
+        final_summary['total_quotes_analyzed'] = len(all_quotes)
+        final_summary['batch_processing_used'] = True
+        final_summary['total_batches'] = len(batch_results)
+        
+        # Combine key takeaways from all batches
+        all_key_takeaways = []
+        for batch in batch_results:
+            if 'key_takeaways' in batch and isinstance(batch['key_takeaways'], list):
+                all_key_takeaways.extend(batch['key_takeaways'])
+        
+        # Deduplicate and select best key takeaways (ensure exactly 3 per theme)
+        final_summary['key_takeaways'] = self._consolidate_key_takeaways(all_key_takeaways)
+        
+        # Combine strengths from all batches
+        all_strengths = []
+        for batch in batch_results:
+            if 'strengths' in batch and isinstance(batch['strengths'], list):
+                all_strengths.extend(batch['strengths'])
+        
+        # Deduplicate and select best strengths (ensure exactly 2 per theme)
+        final_summary['strengths'] = self._consolidate_strengths(all_strengths)
+        
+        # Combine weaknesses from all batches
+        all_weaknesses = []
+        for batch in batch_results:
+            if 'weaknesses' in batch and isinstance(batch['weaknesses'], list):
+                all_weaknesses.extend(batch['weaknesses'])
+        
+        # Deduplicate and select best weaknesses (ensure exactly 2 per theme)
+        final_summary['weaknesses'] = self._consolidate_weaknesses(all_weaknesses)
+        
+        logger.info("Batch summaries combined successfully")
+        return final_summary
+    
+    def _consolidate_key_takeaways(self, all_takeaways: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Consolidate key takeaways ensuring exactly 3 quotes per theme."""
+        # Group by theme
+        theme_groups = {}
+        for takeaway in all_takeaways:
+            theme = takeaway.get('theme', '')
+            if theme:
+                if theme not in theme_groups:
+                    theme_groups[theme] = []
+                theme_groups[theme].append(takeaway)
+        
+        # Select best 3 quotes per theme
+        consolidated = []
+        for theme, takeaways in theme_groups.items():
+            # Sort by relevance/quality if available
+            sorted_takeaways = sorted(takeaways, key=lambda x: len(x.get('quotes', [])), reverse=True)
+            best_takeaway = sorted_takeaways[0] if sorted_takeaways else {}
+            
+            # Ensure exactly 3 quotes
+            quotes = best_takeaway.get('quotes', [])
+            if len(quotes) >= 3:
+                best_takeaway['quotes'] = quotes[:3]
+            elif len(quotes) < 3:
+                # Pad with placeholder if needed
+                while len(quotes) < 3:
+                    quotes.append({"quote": "Additional quote needed", "speaker": "Unknown", "document": "Unknown"})
+                best_takeaway['quotes'] = quotes
+            
+            consolidated.append(best_takeaway)
+        
+        return consolidated
+    
+    def _consolidate_strengths(self, all_strengths: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Consolidate strengths ensuring exactly 2 quotes per theme."""
+        # Similar logic to key takeaways but for 2 quotes
+        theme_groups = {}
+        for strength in all_strengths:
+            theme = strength.get('theme', '')
+            if theme:
+                if theme not in theme_groups:
+                    theme_groups[theme] = []
+                theme_groups[theme].append(strength)
+        
+        consolidated = []
+        for theme, strengths in theme_groups.items():
+            sorted_strengths = sorted(strengths, key=lambda x: len(x.get('quotes', [])), reverse=True)
+            best_strength = sorted_strengths[0] if sorted_strengths else {}
+            
+            quotes = best_strength.get('quotes', [])
+            if len(quotes) >= 2:
+                best_strength['quotes'] = quotes[:2]
+            elif len(quotes) < 2:
+                while len(quotes) < 2:
+                    quotes.append({"quote": "Additional quote needed", "speaker": "Unknown", "document": "Unknown"})
+                best_strength['quotes'] = quotes
+            
+            consolidated.append(best_strength)
+        
+        return consolidated
+    
+    def _consolidate_weaknesses(self, all_weaknesses: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Consolidate weaknesses ensuring exactly 2 quotes per theme."""
+        # Similar logic to strengths
+        theme_groups = {}
+        for weakness in all_weaknesses:
+            theme = weakness.get('theme', '')
+            if theme:
+                if theme not in theme_groups:
+                    theme_groups[theme] = []
+                theme_groups[theme].append(weakness)
+        
+        consolidated = []
+        for theme, weaknesses in theme_groups.items():
+            sorted_weaknesses = sorted(weaknesses, key=lambda x: len(x.get('quotes', [])), reverse=True)
+            best_weakness = sorted_weaknesses[0] if sorted_weaknesses else {}
+            
+            quotes = best_weakness.get('quotes', [])
+            if len(quotes) >= 2:
+                best_weakness['quotes'] = quotes[:2]
+            elif len(quotes) < 2:
+                while len(quotes) < 2:
+                    quotes.append({"quote": "Additional quote needed", "speaker": "Unknown", "document": "Unknown"})
+                best_weakness['quotes'] = quotes
+            
+            consolidated.append(best_weakness)
+        
+        return consolidated
 
     def _create_summary_prompt(self, quotes: List[Dict[str, Any]]) -> str:
         """Create the prompt for generating company summary."""
@@ -188,7 +487,7 @@ class ModularQuoteAnalysisTool(QuoteAnalysisTool):
         
         # The new prompt expects transcript content, so we'll format the quotes as transcript content
         transcript_content = ""
-        for i, quote in enumerate(quotes[:50], 1):  # Limit to 50 quotes for summary to provide better selection
+        for i, quote in enumerate(quotes[:30], 1):  # Limit to 30 quotes for summary to stay within token limits
             quote_text = quote.get('text', '')
             
             # Use the correct fields from the main analysis quotes
@@ -237,7 +536,7 @@ Please provide a JSON response with key_takeaways, strengths, and weaknesses sec
         }
 
     def _parse_summary_response(self, response_text: str, available_quotes: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """Parse OpenAI's summary response using structured data model."""
+        """Parse OpenAI's summary response using structured data model with quote validation."""
         # Initialize structured data model
         result = self._create_structured_data_model()
         result['total_quotes_analyzed'] = len(available_quotes)
@@ -258,112 +557,157 @@ Please provide a JSON response with key_takeaways, strengths, and weaknesses sec
                 
                 # Use structured data model - no need to recreate, already initialized above
                 
-                # Process key takeaways using structured approach
+                # Process key takeaways using structured approach with validation
                 if 'key_takeaways' in parsed_data and isinstance(parsed_data['key_takeaways'], list):
-                    for takeaway in parsed_data['key_takeaways']:
-                        if isinstance(takeaway, dict):
-                            insight = takeaway.get('theme', '')
-                            quotes = takeaway.get('quotes', [])
-                            
-                            # Convert quotes to the expected format with validation
-                            supporting_quotes = []
-                            for quote_data in quotes:
-                                if isinstance(quote_data, dict):
-                                    supporting_quotes.append({
-                                        'text': quote_data.get('quote', ''),
-                                        'speaker_info': quote_data.get('speaker', 'Unknown Speaker'),
-                                        'transcript_name': quote_data.get('document', 'Unknown Document')
-                                    })
-                            
-                            # Only add if we have valid data
-                            if insight and supporting_quotes:
-                                result['key_takeaways'].append({
-                                    'insight': insight,
-                                    'supporting_quotes': supporting_quotes
-                                })
+                    validated_takeaways = self._validate_and_fix_key_takeaways(parsed_data['key_takeaways'], available_quotes)
+                    result['key_takeaways'] = validated_takeaways
                 
-                # Process strengths using structured approach
+                # Process strengths with validation
                 if 'strengths' in parsed_data and isinstance(parsed_data['strengths'], list):
-                    for strength in parsed_data['strengths']:
-                        if isinstance(strength, dict):
-                            insight = strength.get('theme', '')
-                            quotes = strength.get('quotes', [])
-                            
-                            # Convert quotes to the expected format with validation
-                            supporting_quotes = []
-                            for quote_data in quotes:
-                                if isinstance(quote_data, dict):
-                                    supporting_quotes.append({
-                                        'text': quote_data.get('quote', ''),
-                                        'speaker_info': quote_data.get('speaker', 'Unknown Speaker'),
-                                        'transcript_name': quote_data.get('document', 'Unknown Document')
-                                    })
-                            
-                            # Only add if we have valid data
-                            if insight and supporting_quotes:
-                                result['strengths'].append({
-                                    'insight': insight,
-                                    'supporting_quotes': supporting_quotes
-                                })
+                    validated_strengths = self._validate_and_fix_strengths(parsed_data['strengths'], available_quotes)
+                    result['strengths'] = validated_strengths
                 
-                # Process weaknesses using structured approach
+                # Process weaknesses with validation
                 if 'weaknesses' in parsed_data and isinstance(parsed_data['weaknesses'], list):
-                    for weakness in parsed_data['weaknesses']:
-                        if isinstance(weakness, dict):
-                            insight = weakness.get('theme', '')
-                            quotes = weakness.get('quotes', [])
-                            
-                            # Convert quotes to the expected format with validation
-                            supporting_quotes = []
-                            for quote_data in quotes:
-                                if isinstance(quote_data, dict):
-                                    supporting_quotes.append({
-                                        'text': quote_data.get('quote', ''),
-                                        'speaker_info': quote_data.get('speaker', 'Unknown Speaker'),
-                                        'transcript_name': quote_data.get('document', 'Unknown Document')
-                                    })
-                            
-                            # Only add if we have valid data
-                            if insight and supporting_quotes:
-                                result['weaknesses'].append({
-                                    'insight': insight,
-                                    'supporting_quotes': supporting_quotes
-                                })
+                    validated_weaknesses = self._validate_and_fix_weaknesses(parsed_data['weaknesses'], available_quotes)
+                    result['weaknesses'] = validated_weaknesses
                 
+                logger.info("Summary response parsed and validated successfully")
                 return result
                 
-            except json.JSONDecodeError as e:
-                # JSON parsing failed, falling back to text parsing with structured model
-                print(f"JSON parsing failed, attempting text parsing: {e}")
-                pass
-            
-            # Fallback to old text parsing method using structured model
-            sections = self._parse_all_sections(response_text, available_quotes)
-            
-            # Validate and supplement using structured approach
-            validated_takeaways = self._validate_and_supplement_takeaways(sections.get('key_takeaways', []), available_quotes)
-            validated_strengths = self._validate_and_supplement_takeaways(sections.get('strengths', []), available_quotes)
-            validated_weaknesses = self._validate_and_supplement_takeaways(sections.get('weaknesses', []), available_quotes)
-            
-            # Update the structured result with validated data
-            result['key_takeaways'] = validated_takeaways if validated_takeaways else []
-            result['strengths'] = validated_strengths if validated_strengths else []
-            result['weaknesses'] = validated_weaknesses if validated_weaknesses else []
-            
-            return result
-            
-        except (ValueError, TypeError) as e:
-            logger.error(f"Data parsing error in summary response: {e}")
-            # Return structured model even on error to maintain consistency
-            return result
-        except json.JSONDecodeError as e:
-            logger.error(f"JSON parsing error in summary response: {e}")
-            # Return structured model even on error to maintain consistency
-            return result
+            except Exception as e:
+                logger.error(f"Error parsing JSON response: {e}")
+                return result
+                
         except Exception as e:
-            logger.error(f"Unexpected error parsing summary response: {e}")
-            # Return structured model even on error to maintain consistency
+            logger.error(f"Error in summary response parsing: {e}")
             return result
+    
+    def _validate_and_fix_key_takeaways(self, takeaways: List[Dict[str, Any]], available_quotes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Validate and fix key takeaways to ensure exactly 3 quotes per theme."""
+        if not isinstance(takeaways, list):
+            return []
+        
+        validated_takeaways = []
+        for takeaway in takeaways:
+            if isinstance(takeaway, dict):
+                theme = takeaway.get('theme', '')
+                quotes = takeaway.get('quotes', [])
+                
+                # Ensure exactly 3 quotes
+                if len(quotes) < 3:
+                    logger.warning(f"Key takeaway '{theme}' has only {len(quotes)} quotes, need 3. Adding placeholder quotes.")
+                    while len(quotes) < 3:
+                        quotes.append({
+                            "quote": f"Additional quote needed for {theme}",
+                            "speaker": "Quote Required",
+                            "document": "Additional Analysis Needed"
+                        })
+                elif len(quotes) > 3:
+                    logger.info(f"Key takeaway '{theme}' has {len(quotes)} quotes, trimming to 3 best ones.")
+                    quotes = quotes[:3]
+                
+                # Convert to expected format
+                supporting_quotes = []
+                for quote_data in quotes:
+                    if isinstance(quote_data, dict):
+                        supporting_quotes.append({
+                            'text': quote_data.get('quote', ''),
+                            'speaker_info': quote_data.get('speaker', 'Unknown Speaker'),
+                            'transcript_name': quote_data.get('document', 'Unknown Document')
+                        })
+                
+                if theme and supporting_quotes:
+                    validated_takeaways.append({
+                        'theme': theme,
+                        'quotes': supporting_quotes
+                    })
+        
+        return validated_takeaways
+    
+    def _validate_and_fix_strengths(self, strengths: List[Dict[str, Any]], available_quotes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Validate and fix strengths to ensure exactly 2 quotes per theme."""
+        if not isinstance(strengths, list):
+            return []
+        
+        validated_strengths = []
+        for strength in strengths:
+            if isinstance(strength, dict):
+                theme = strength.get('theme', '')
+                quotes = strength.get('quotes', [])
+                
+                # Ensure exactly 2 quotes
+                if len(quotes) < 2:
+                    logger.warning(f"Strength '{theme}' has only {len(quotes)} quotes, need 2. Adding placeholder quotes.")
+                    while len(quotes) < 2:
+                        quotes.append({
+                            "quote": f"Additional quote needed for {theme}",
+                            "speaker": "Quote Required",
+                            "document": "Additional Analysis Needed"
+                        })
+                elif len(quotes) > 2:
+                    logger.info(f"Strength '{theme}' has {len(quotes)} quotes, trimming to 2 best ones.")
+                    quotes = quotes[:2]
+                
+                # Convert to expected format
+                supporting_quotes = []
+                for quote_data in quotes:
+                    if isinstance(quote_data, dict):
+                        supporting_quotes.append({
+                            'text': quote_data.get('quote', ''),
+                            'speaker_info': quote_data.get('speaker', 'Unknown Speaker'),
+                            'transcript_name': quote_data.get('document', 'Unknown Document')
+                        })
+                
+                if theme and supporting_quotes:
+                    validated_strengths.append({
+                        'theme': theme,
+                        'quotes': supporting_quotes
+                    })
+        
+        return validated_strengths
+    
+    def _validate_and_fix_weaknesses(self, weaknesses: List[Dict[str, Any]], available_quotes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Validate and fix weaknesses to ensure exactly 2 quotes per theme."""
+        if not isinstance(weaknesses, list):
+            return []
+        
+        validated_weaknesses = []
+        for weakness in weaknesses:
+            if isinstance(weakness, dict):
+                theme = weakness.get('theme', '')
+                quotes = weakness.get('quotes', [])
+                
+                # Ensure exactly 2 quotes
+                if len(quotes) < 2:
+                    logger.warning(f"Warning: Weakness '{theme}' has only {len(quotes)} quotes, need 2. Adding placeholder quotes.")
+                    while len(quotes) < 2:
+                        quotes.append({
+                            "quote": f"Additional quote needed for {theme}",
+                            "speaker": "Quote Required",
+                            "document": "Additional Analysis Needed"
+                        })
+                elif len(quotes) > 2:
+                    logger.info(f"Weakness '{theme}' has {len(quotes)} quotes, trimming to 2 best ones.")
+                    quotes = quotes[:2]
+                
+                # Convert to expected format
+                supporting_quotes = []
+                for quote_data in quotes:
+                    if isinstance(quote_data, dict):
+                        supporting_quotes.append({
+                            'text': quote_data.get('quote', ''),
+                            'speaker_info': quote_data.get('speaker', 'Unknown Speaker'),
+                            'transcript_name': quote_data.get('document', 'Unknown Document')
+                        })
+                
+                if theme and supporting_quotes:
+                    validated_weaknesses.append({
+                        'theme': theme,
+                        'quotes': supporting_quotes
+                    })
+        
+        return validated_weaknesses
 
     def _parse_all_sections(self, response_text: str, available_quotes: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
         """Parse all sections from the response text with proper quote citations."""
@@ -608,83 +952,7 @@ Please provide a JSON response with key_takeaways, strengths, and weaknesses sec
             }
             sections[section_name].append(duplicated_insight)
 
-    def _parse_strengths_weaknesses(self, response_text: str, available_quotes: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
-        """Parse strengths and weaknesses from the summary response."""
-        strengths = []
-        weaknesses = []
-        
-        lines = response_text.split('\n')
-        current_section = None
-        
-        for line in lines:
-            line = line.strip()
-            
-            # Determine current section - be more flexible with section detection
-            if any(keyword in line.lower() for keyword in ['strengths', 'strength', 'strong points', 'advantages']):
-                current_section = 'strengths'
-                continue
-            elif any(keyword in line.lower() for keyword in ['weaknesses', 'weakness', 'weak points', 'challenges', 'concerns']):
-                current_section = 'weaknesses'
-                continue
-            elif any(keyword in line.lower() for keyword in ['conclusion', 'summary', 'key takeaways', 'takeaways']):
-                # If we hit another section, stop parsing
-                if current_section in ['strengths', 'weaknesses']:
-                    break
-            
-            # Parse items in current section
-            if current_section and line:
-                # Look for numbered items (1., 2., etc.)
-                if re.match(r'^\d+\.', line):
-                    insight = re.sub(r'^\d+\.\s*', '', line)
-                    if insight and len(insight) > 10:  # Ensure meaningful content
-                        item = {
-                            'insight': insight,
-                            'supporting_quotes': self._find_supporting_quotes(insight, available_quotes)
-                        }
-                        if current_section == 'strengths' and len(strengths) < 3:
-                            strengths.append(item)
-                        elif current_section == 'weaknesses' and len(weaknesses) < 3:
-                            weaknesses.append(item)
-                # Look for bullet points
-                elif re.match(r'^[•\-*]\s*', line):
-                    insight = re.sub(r'^[•\-*]\s*', '', line)
-                    if insight and len(insight) > 10:  # Ensure meaningful content
-                        item = {
-                            'insight': insight,
-                            'supporting_quotes': self._find_supporting_quotes(insight, available_quotes)
-                        }
-                        if current_section == 'strengths' and len(strengths) < 3:
-                            strengths.append(item)
-                        elif current_section == 'weaknesses' and len(weaknesses) < 3:
-                            weaknesses.append(item)
-        
-        # If we didn't find explicit sections, try to infer from content
-        if not strengths and not weaknesses:
-            # Look for positive/negative language patterns
-            for line in lines:
-                line = line.strip()
-                if re.match(r'^\d+\.', line) or re.match(r'^[•\-*]\s*', line):
-                    insight = re.sub(r'^(?:\d+\.|[•\-*]\s*)', '', line)
-                    if insight and len(insight) > 10:
-                        # Simple sentiment analysis
-                        positive_words = ['advantage', 'strength', 'benefit', 'opportunity', 'growth', 'success', 'positive', 'good', 'excellent', 'competitive', 'leader', 'innovative', 'superior']
-                        negative_words = ['weakness', 'challenge', 'problem', 'issue', 'risk', 'concern', 'negative', 'bad', 'poor', 'difficult', 'threat', 'pressure', 'limitation']
-                        
-                        insight_lower = insight.lower()
-                        positive_score = sum(1 for word in positive_words if word in insight_lower)
-                        negative_score = sum(1 for word in negative_words if word in insight_lower)
-                        
-                        item = {
-                            'insight': insight,
-                            'supporting_quotes': self._find_supporting_quotes(insight, available_quotes)
-                        }
-                        
-                        if positive_score > negative_score and len(strengths) < 3:
-                            strengths.append(item)
-                        elif negative_score > positive_score and len(weaknesses) < 3:
-                            weaknesses.append(item)
-        
-        return {'strengths': strengths, 'weaknesses': weaknesses}
+
 
     def _find_supporting_quotes(self, insight: str, available_quotes: List[Dict[str, Any]], max_quotes: int = 3) -> List[Dict[str, Any]]:
         """Find quotes that support a given insight."""
@@ -843,6 +1111,10 @@ Please provide a JSON response with key_takeaways, strengths, and weaknesses sec
         # Store quotes in vector database
         if self.vector_db_manager.quotes_collection:
             self.store_quotes_in_vector_db(all_quotes)
+            
+            # Verify quotes are stored properly by querying back a known quote
+            if all_quotes:
+                self._verify_quotes_storage(all_quotes)
         
         # Analyze perspectives
         perspectives = {}

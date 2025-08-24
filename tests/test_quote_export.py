@@ -7,6 +7,11 @@ quote column text is properly wrapped to show the full quote when outputted.
 """
 
 import os
+import sys
+
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from export_utils import ExportManager
 
 def test_quote_export():

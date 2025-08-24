@@ -13,6 +13,11 @@ import unittest
 from unittest.mock import Mock, patch, MagicMock
 import numpy as np
 from typing import List, Tuple
+import sys
+import os
+
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Import the classes we want to test
 from fuzzy_matching import FuzzyMatcher

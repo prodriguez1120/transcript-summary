@@ -41,6 +41,9 @@ class DataValidationError(VectorDatabaseError):
 try:
     import chromadb
     from chromadb.config import Settings
+
+
+    from chromadb.utils import embedding_functions
     CHROMA_AVAILABLE = True
 except ImportError:
     CHROMA_AVAILABLE = False
@@ -52,6 +55,7 @@ class VectorDatabaseManager:
         self.chroma_client = None
         self.collection = None
         self.quotes_collection = None
+        self.embedding_function = None
         
         # Set up logger
         self.logger = logging.getLogger(__name__)
@@ -67,22 +71,14 @@ class VectorDatabaseManager:
             self.logger.info(f"Initializing ChromaDB at {self.chroma_persist_directory}")
             self.chroma_client = chromadb.PersistentClient(path=self.chroma_persist_directory)
             
-            # Create collections for different types of data
-            self.collection = self.chroma_client.get_or_create_collection(
-                name="transcript_chunks",
-                metadata={"hnsw:space": "cosine"}
-            )
+            # Initialize OpenAI embedding function
+            self._setup_embedding_function()
             
-            # Dedicated collection for quotes with enhanced metadata
-            self.quotes_collection = self.chroma_client.get_or_create_collection(
-                name="flexray_quotes",
-                metadata={
-                    "hnsw:space": "cosine",
-                    "description": "FlexXray interview quotes with sentiment and perspective metadata"
-                }
-            )
+            # Force recreation of collections with proper embedding functions
+            self._force_collection_recreation_with_embeddings()
             
             self.logger.info(f"ChromaDB initialized successfully at {self.chroma_persist_directory}")
+            self.logger.info(f"Using embedding function: {self.embedding_function.__class__.__name__ if self.embedding_function else 'ChromaDB default'}")
             quote_count = self.quotes_collection.count()
             self.logger.info(f"Quotes collection has {quote_count} existing quotes")
             
@@ -107,6 +103,174 @@ class VectorDatabaseManager:
             self.collection = None
             self.quotes_collection = None
             raise ChromaDBInitializationError(error_msg) from e
+
+    def _force_collection_recreation_with_embeddings(self):
+        """Force recreation of collections to ensure embedding functions are properly attached."""
+        try:
+            self.logger.info("🔧 Forcing collection recreation with proper embedding functions...")
+            
+            # Try to create new collections with embedding functions using different names
+            self.logger.info("🏗️ Creating new collections with embedding functions...")
+            
+            # Create new collections with "_with_embeddings" suffix
+            new_transcript_name = "transcript_chunks_with_embeddings"
+            new_quotes_name = "flexray_quotes_with_embeddings"
+            
+            try:
+                # Create new transcript collection with embedding function
+                self.collection = self._create_collection_with_embedding(
+                    name=new_transcript_name,
+                    metadata={"hnsw:space": "cosine", "version": "2.0_with_openai_embeddings"}
+                )
+                self.logger.info(f"✅ Created new collection: {new_transcript_name}")
+                
+                # Create new quotes collection with embedding function
+                self.quotes_collection = self._create_collection_with_embedding(
+                    name=new_quotes_name,
+                    metadata={
+                        "hnsw:space": "cosine",
+                        "description": "FlexXray interview quotes with sentiment and perspective metadata",
+                        "version": "2.0_with_openai_embeddings"
+                    }
+                )
+                self.logger.info(f"✅ Created new collection: {new_quotes_name}")
+                
+            except Exception as e:
+                self.logger.warning(f"Could not create new collections with embeddings: {e}")
+                # Fall back to creating collections without embedding functions
+                self.logger.info("🔄 Falling back to default collections...")
+                self.collection = self.chroma_client.get_or_create_collection(
+                    name="transcript_chunks",
+                    metadata={"hnsw:space": "cosine"}
+                )
+                self.quotes_collection = self.chroma_client.get_or_create_collection(
+                    name="flexray_quotes",
+                    metadata={
+                        "hnsw:space": "cosine",
+                        "description": "FlexXray interview quotes with sentiment and perspective metadata"
+                    }
+                )
+            
+            # Verify embedding functions are properly attached
+            self._verify_all_collections_have_embeddings()
+            
+        except Exception as e:
+            self.logger.error(f"Error forcing collection recreation: {e}")
+            raise
+
+    def _verify_all_collections_have_embeddings(self):
+        """Verify that all collections have embedding functions properly attached."""
+        try:
+            self.logger.info("🔍 Verifying all collections have embedding functions...")
+            
+            # Check transcript_chunks collection
+            if hasattr(self.collection, 'embedding_function') and self.collection.embedding_function:
+                self.logger.info("✅ transcript_chunks collection has embedding function")
+            else:
+                self.logger.warning("⚠️ transcript_chunks collection missing embedding function")
+            
+            # Check flexray_quotes collection
+            if hasattr(self.quotes_collection, 'embedding_function') and self.quotes_collection.embedding_function:
+                self.logger.info("✅ flexray_quotes collection has embedding function")
+            else:
+                self.logger.warning("⚠️ flexray_quotes collection missing embedding function")
+                
+        except Exception as e:
+            self.logger.error(f"Error verifying collection embeddings: {e}")
+
+    def _setup_embedding_function(self):
+        """Set up the OpenAI embedding function for ChromaDB."""
+        try:
+            # Get OpenAI API key from environment
+            api_key = os.getenv('OPENAI_API_KEY')
+            if not api_key:
+                self.logger.warning("OPENAI_API_KEY not found. Falling back to default embeddings.")
+                self.embedding_function = None
+                return
+            
+            # Create OpenAI embedding function
+            self.embedding_function = embedding_functions.OpenAIEmbeddingFunction(
+                api_key=api_key,
+                model_name="text-embedding-3-small"  # Using small model for cost efficiency
+            )
+            self.logger.info("OpenAI embedding function initialized successfully")
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to initialize OpenAI embedding function: {e}. Falling back to default embeddings.")
+            self.embedding_function = None
+
+    def _create_collection_with_embedding(self, name: str, metadata: dict):
+        """Create a collection with proper embedding function handling."""
+        if self.embedding_function is not None:
+            collection = self.chroma_client.get_or_create_collection(
+                name=name,
+                embedding_function=self.embedding_function,
+                metadata=metadata
+            )
+            # Verify embedding function is actually attached
+            self._verify_collection_embedding_function(collection, name)
+            return collection
+        else:
+            self.logger.warning(f"⚠️ Creating collection '{name}' without custom embedding function - using ChromaDB defaults")
+            return self.chroma_client.get_or_create_collection(
+                name=name,
+                metadata=metadata
+            )
+
+    def _verify_collection_embedding_function(self, collection, collection_name: str):
+        """Verify that the collection actually has the embedding function attached."""
+        try:
+            # Check if collection has embedding function
+            if hasattr(collection, 'embedding_function') and collection.embedding_function:
+                self.logger.info(f"✅ Collection '{collection_name}' has embedding function: {collection.embedding_function.__class__.__name__}")
+                
+                # Test the embedding function with a sample text
+                test_text = "This is a test document for embedding verification."
+                try:
+                    embeddings = collection.embedding_function([test_text])
+                    if embeddings and len(embeddings[0]) > 0:
+                        embedding_dim = len(embeddings[0])
+                        self.logger.info(f"✅ Embedding function working - generated {embedding_dim}-dimensional vector")
+                    else:
+                        self.logger.error(f"❌ Embedding function failed - no embeddings generated")
+                except Exception as e:
+                    self.logger.error(f"❌ Embedding function test failed: {e}")
+            else:
+                self.logger.warning(f"⚠️ Collection '{collection_name}' has no embedding function - using defaults")
+                
+        except Exception as e:
+            self.logger.error(f"❌ Error verifying collection embedding function: {e}")
+
+    def _validate_embeddings_before_storage(self, documents: List[str]) -> bool:
+        """Validate that embeddings can be generated for the documents before storage."""
+        if not self.embedding_function:
+            self.logger.warning("⚠️ No embedding function available - cannot validate embeddings")
+            return True
+            
+        try:
+            self.logger.info("🔍 Validating embeddings before storage...")
+            
+            # Test with first document
+            if documents:
+                test_doc = documents[0]
+                self.logger.info(f"Testing embedding generation for: '{test_doc[:50]}...'")
+                
+                # Generate embedding
+                embeddings = self.embedding_function([test_doc])
+                
+                if embeddings and len(embeddings) > 0 and len(embeddings[0]) > 0:
+                    embedding_dim = len(embeddings[0])
+                    self.logger.info(f"✅ Embedding validation successful - {embedding_dim}-dimensional vector generated")
+                    return True
+                else:
+                    self.logger.error("❌ Embedding validation failed - no embeddings generated")
+                    return False
+                    
+        except Exception as e:
+            self.logger.error(f"❌ Embedding validation error: {e}")
+            return False
+
+
 
     def store_quotes_in_vector_db(self, quotes: List[Dict[str, Any]], batch_size: int = 100) -> bool:
         """Store quotes in the vector database with enhanced metadata."""
@@ -133,6 +297,11 @@ class VectorDatabaseManager:
         try:
             self.logger.info(f"Starting to store {len(quotes)} quotes with batch size {batch_size}")
             start_time = time.time()
+            
+            # Validate embeddings before storage
+            if not self._validate_embeddings_before_storage([quote.get('text', '') for quote in quotes if quote.get('text')]):
+                self.logger.error("❌ Embedding validation failed - aborting storage")
+                return False
             
             # Process quotes in batches
             for i in range(0, len(quotes), batch_size):
@@ -303,7 +472,7 @@ class VectorDatabaseManager:
             self.chroma_client.delete_collection(name="flexray_quotes")
             
             # Recreate the collection
-            self.quotes_collection = self.chroma_client.get_or_create_collection(
+            self.quotes_collection = self._create_collection_with_embedding(
                 name="flexray_quotes",
                 metadata={
                     "hnsw:space": "cosine",
@@ -319,6 +488,33 @@ class VectorDatabaseManager:
             self.logger.error(error_msg)
             raise QuoteStorageError(error_msg) from e
 
+    def force_embedding_function_reattachment(self) -> bool:
+        """Force reattachment of embedding functions to collections."""
+        try:
+            self.logger.info("🔧 Forcing reattachment of embedding functions to collections...")
+            
+            if not self.embedding_function:
+                self.logger.warning("No embedding function available to reattach")
+                return False
+            
+            # Force recreation of collections
+            self._force_collection_recreation_with_embeddings()
+            
+            # Verify the fix worked
+            final_stats = self.get_vector_database_stats()
+            embedding_status = final_stats.get('embedding_function', {})
+            
+            if embedding_status.get('type') == 'collection_attached':
+                self.logger.info("✅ Successfully reattached embedding functions to collections")
+                return True
+            else:
+                self.logger.error("❌ Failed to reattach embedding functions")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"Error forcing embedding function reattachment: {e}")
+            return False
+
     def get_vector_database_stats(self) -> Dict[str, Any]:
         """Get statistics about the vector database."""
         if not self.quotes_collection:
@@ -332,10 +528,14 @@ class VectorDatabaseManager:
             total_quotes = self.quotes_collection.count()
             collections = [col.name for col in self.chroma_client.list_collections()]
             
+            # Check embedding function status
+            embedding_status = self._get_embedding_function_status()
+            
             stats = {
                 'available': True,
                 'total_quotes': total_quotes,
-                'collections': collections
+                'collections': collections,
+                'embedding_function': embedding_status
             }
             
             self.logger.debug(f"Database stats: {stats}")
@@ -349,6 +549,109 @@ class VectorDatabaseManager:
                 'total_quotes': 0,
                 'collections': []
             }
+
+    def _get_embedding_function_status(self) -> Dict[str, Any]:
+        """Get detailed status of the embedding function."""
+        try:
+            if not self.embedding_function:
+                return {
+                    'type': 'none',
+                    'status': 'using_chromadb_defaults',
+                    'warning': 'No custom embedding function - results may be poor'
+                }
+            
+            # Check if collection actually has the embedding function
+            if hasattr(self.quotes_collection, 'embedding_function') and self.quotes_collection.embedding_function:
+                collection_ef = self.quotes_collection.embedding_function
+                return {
+                    'type': 'collection_attached',
+                    'function_class': collection_ef.__class__.__name__,
+                    'status': 'active',
+                    'model': getattr(collection_ef, 'model_name', 'unknown'),
+                    'info': 'Embedding function properly attached to collection'
+                }
+            else:
+                return {
+                    'type': 'not_attached',
+                    'status': 'warning',
+                    'warning': 'Embedding function exists but not attached to collection - using defaults'
+                }
+                
+        except Exception as e:
+            return {
+                'type': 'error',
+                'status': 'error',
+                'error': str(e)
+            }
+
+    def verify_stored_embeddings(self, sample_size: int = 3) -> Dict[str, Any]:
+        """Verify that stored documents actually have embeddings."""
+        if not self.quotes_collection:
+            return {'error': 'Collection not available'}
+        
+        try:
+            self.logger.info("🔍 Verifying stored document embeddings...")
+            
+            # Get sample documents
+            sample_results = self.quotes_collection.peek(limit=sample_size)
+            
+            if not sample_results or not sample_results.get('documents'):
+                return {'error': 'No documents found in collection'}
+            
+            verification_results = {
+                'total_checked': len(sample_results['documents']),
+                'documents': []
+            }
+            
+            for i, doc_text in enumerate(sample_results['documents']):
+                doc_info = {
+                    'index': i,
+                    'text_preview': doc_text[:50] + '...' if len(doc_text) > 50 else doc_text,
+                    'has_embedding': False,
+                    'embedding_dim': None
+                }
+                
+                # Try to get embedding for this document
+                try:
+                    # This will trigger embedding generation if not already present
+                    search_results = self.quotes_collection.query(
+                        query_texts=[doc_text],
+                        n_results=1,
+                        include=['embeddings', 'metadatas']
+                    )
+                    
+                    if search_results and 'embeddings' in search_results and search_results['embeddings']:
+                        embeddings = search_results['embeddings'][0]
+                        if embeddings and len(embeddings) > 0:
+                            doc_info['has_embedding'] = True
+                            doc_info['embedding_dim'] = len(embeddings[0])
+                            self.logger.info(f"✅ Document {i+1}: {doc_info['embedding_dim']}-dimensional embedding found")
+                        else:
+                            self.logger.warning(f"⚠️ Document {i+1}: No embedding data")
+                    else:
+                        self.logger.warning(f"⚠️ Document {i+1}: Could not retrieve embedding")
+                        
+                except Exception as e:
+                    self.logger.error(f"❌ Document {i+1}: Error checking embedding: {e}")
+                    doc_info['error'] = str(e)
+                
+                verification_results['documents'].append(doc_info)
+            
+            # Summary
+            successful_embeddings = sum(1 for doc in verification_results['documents'] if doc.get('has_embedding'))
+            verification_results['summary'] = {
+                'successful_embeddings': successful_embeddings,
+                'total_documents': len(verification_results['documents']),
+                'success_rate': f"{(successful_embeddings / len(verification_results['documents'])) * 100:.1f}%"
+            }
+            
+            self.logger.info(f"✅ Embedding verification complete: {successful_embeddings}/{len(verification_results['documents'])} documents have embeddings")
+            return verification_results
+            
+        except Exception as e:
+            error_msg = f"Error verifying stored embeddings: {e}"
+            self.logger.error(error_msg)
+            return {'error': error_msg}
 
     def _generate_quote_id(self, quote: Dict[str, Any]) -> str:
         """Generate a unique ID for a quote."""
