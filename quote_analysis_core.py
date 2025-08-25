@@ -13,7 +13,7 @@ import os
 import json
 import re
 from openai import OpenAI
-from typing import List, Dict, Any, Tuple, Optional
+from typing import List, Dict, Any, Tuple, Optional, Union
 from pathlib import Path
 import time
 from dotenv import load_dotenv
@@ -53,7 +53,7 @@ except ImportError as e:
 load_dotenv()
 
 class QuoteAnalysisTool:
-    def __init__(self, api_key: str = None, chroma_persist_directory: str = "./chroma_db", min_quote_length: int = 10):
+    def __init__(self, api_key: Union[str, None] = None, chroma_persist_directory: str = "./chroma_db", min_quote_length: int = 10):
         """Initialize the quote analysis tool with OpenAI API key and ChromaDB."""
         # Set up logger
         self.logger = logging.getLogger(__name__)
@@ -72,7 +72,12 @@ class QuoteAnalysisTool:
         if VECTOR_DB_AVAILABLE:
             try:
                 self.logger.info(f"Initializing Vector Database Manager at {chroma_persist_directory}")
-                self.vector_db_manager = VectorDatabaseManager(chroma_persist_directory=chroma_persist_directory)
+                # At this point, self.api_key is guaranteed to be a string due to validation above
+                assert self.api_key is not None, "API key should be set by this point"
+                self.vector_db_manager = VectorDatabaseManager(
+                    chroma_persist_directory=chroma_persist_directory,
+                    openai_api_key=self.api_key  # Pass the API key explicitly
+                )
                 
                 # Get references to collections from the centralized manager
                 self.chroma_client = self.vector_db_manager.chroma_client

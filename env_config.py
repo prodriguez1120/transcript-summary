@@ -9,7 +9,7 @@ a clean interface for accessing configuration values throughout the application.
 import os
 from pathlib import Path
 from dotenv import load_dotenv
-from typing import Optional
+from typing import Optional, Dict, Any
 
 
 class EnvironmentConfig:
@@ -62,6 +62,48 @@ class EnvironmentConfig:
         """Get the ChromaDB directory path."""
         return self.project_root / "chroma_db"
 
+    @property
+    def max_quotes_for_analysis(self) -> int:
+        """Get the maximum number of quotes to process in OpenAI analysis."""
+        return int(os.getenv("MAX_QUOTES_FOR_ANALYSIS", "30"))
+
+    @property
+    def max_tokens_per_quote(self) -> int:
+        """Get the estimated maximum tokens per quote for cost calculation."""
+        return int(os.getenv("MAX_TOKENS_PER_QUOTE", "150"))
+
+    @property
+    def openai_model_for_summary(self) -> str:
+        """Get the OpenAI model to use for summary generation."""
+        return os.getenv("OPENAI_MODEL_FOR_SUMMARY", "gpt-4o")
+
+    @property
+    def model_token_limit(self) -> int:
+        """Get the token limit for the configured OpenAI model."""
+        model = self.openai_model_for_summary.lower()
+        
+        # Model-specific token limits (context window sizes)
+        model_limits = {
+            "gpt-4o": 128000,        # GPT-4o: 128k context
+            "gpt-4o-mini": 128000,   # GPT-4o-mini: 128k context  
+            "gpt-4": 8192,           # GPT-4: 8k context
+            "gpt-4-32k": 32768,      # GPT-4-32k: 32k context
+            "gpt-3.5-turbo": 16385,  # GPT-3.5-turbo: 16k context
+        }
+        
+        # Get the limit for the configured model, default to conservative 6k if unknown
+        return model_limits.get(model, 6000)
+
+    @property
+    def conservative_token_threshold(self) -> int:
+        """Get the conservative token threshold for warnings (80% of model limit)."""
+        return int(self.model_token_limit * 0.8)
+
+    @property
+    def enable_token_logging(self) -> bool:
+        """Get whether to enable detailed token usage logging."""
+        return os.getenv("ENABLE_TOKEN_LOGGING", "true").lower() in ("true", "1", "yes")
+
     def validate_configuration(self) -> bool:
         """Validate that all required configuration is present."""
         if not self.openai_api_key:
@@ -98,6 +140,41 @@ class EnvironmentConfig:
             self.transcript_directory,
             self.chroma_db_directory,
         ]
+
+    def estimate_token_usage(self, quote_count: int, include_prompt: bool = True) -> Dict[str, Any]:
+        """Estimate token usage for OpenAI API calls.
+        
+        Args:
+            quote_count: Number of quotes to process
+            include_prompt: Whether to include prompt tokens in estimation
+            
+        Returns:
+            Dictionary with token estimates and cost information
+        """
+        # Base prompt tokens (approximate for company summary generation)
+        base_prompt_tokens = 800 if include_prompt else 0
+        
+        # Estimate tokens per quote (including speaker, document, and quote text)
+        estimated_quote_tokens = quote_count * self.max_tokens_per_quote
+        
+        # Total estimated tokens
+        total_tokens = base_prompt_tokens + estimated_quote_tokens
+        
+        # Cost estimation (approximate, based on GPT-4 pricing)
+        # GPT-4: $0.03 per 1K input tokens, $0.06 per 1K output tokens
+        input_cost = (total_tokens / 1000) * 0.03
+        output_cost = (total_tokens / 1000) * 0.06  # Assuming output is roughly same length
+        total_cost = input_cost + output_cost
+        
+        return {
+            "quote_count": quote_count,
+            "base_prompt_tokens": base_prompt_tokens,
+            "quote_tokens": estimated_quote_tokens,
+            "total_tokens": total_tokens,
+            "estimated_cost_usd": round(total_cost, 4),
+            "model": self.openai_model_for_summary,
+            "max_quotes_limit": self.max_quotes_for_analysis
+        }
 
         for directory in directories:
             directory.mkdir(exist_ok=True)

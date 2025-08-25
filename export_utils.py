@@ -156,7 +156,7 @@ class ExportManager:
                         )
                         if quotes:
                             f.write("   Supporting quotes:\n")
-                            for quote in quotes[:2]:  # Limit to 2 quotes
+                            for quote in quotes:  # Show all quotes
                                 if isinstance(quote, dict):
                                     # Use formatted_text if available, otherwise fall back to text
                                     quote_text = quote.get(
@@ -193,7 +193,7 @@ class ExportManager:
                         )
                         if quotes:
                             f.write("   Supporting quotes:\n")
-                            for quote in quotes[:2]:  # Limit to 2 quotes
+                            for quote in quotes:  # Show all quotes
                                 if isinstance(quote, dict):
                                     # Use formatted_text if available, otherwise fall back to text
                                     quote_text = quote.get(
@@ -230,7 +230,7 @@ class ExportManager:
                         )
                         if quotes:
                             f.write("   Supporting quotes:\n")
-                            for quote in quotes[:2]:  # Limit to 2 quotes
+                            for quote in quotes:  # Show all quotes
                                 if isinstance(quote, dict):
                                     # Use formatted_text if available, otherwise fall back to text
                                     quote_text = quote.get(

@@ -29,6 +29,7 @@ class SummaryGenerator:
     ) -> Dict[str, Any]:
         """Generate company summary directly without batch processing."""
         if not quotes:
+            logger.warning("No quotes provided for company summary generation")
             return {}
         
         logger.info(f"Generating company summary directly with {len(quotes)} quotes")
@@ -54,8 +55,11 @@ class SummaryGenerator:
                 max_tokens=params.get("max_tokens", 3000),
             )
             
-            # Parse summary response
+            # Log the raw OpenAI response for debugging
             response_content = response.choices[0].message.content
+            logger.info(f"Raw OpenAI response received: {len(response_content)} characters")
+            logger.debug(f"Raw OpenAI response content: {response_content}")
+            
             if response_content:
                 summary_data = self._parse_summary_response(response_content, quotes)
                 logger.info("Company summary page generated successfully")
@@ -66,6 +70,7 @@ class SummaryGenerator:
                 
         except Exception as e:
             logger.error(f"Error in company summary generation: {e}")
+            logger.exception("Full exception details:")
             return {}
     
     def generate_company_summary_with_batching(
@@ -98,24 +103,49 @@ class SummaryGenerator:
             
             try:
                 # Generate summary for this batch
-                batch_summary = self._generate_single_batch_summary(
-                    batch_quotes, batch_num + 1
+                batch_prompt = self._create_summary_prompt(batch_quotes)
+                
+                # Get prompt configuration
+                params = self.prompt_config.get_prompt_parameters("company_summary")
+                
+                # Call OpenAI for batch summary
+                response = self.client.chat.completions.create(
+                    model=params.get("model", "gpt-4"),
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": self.prompt_config.get_system_message("company_summary"),
+                        },
+                        {"role": "user", "content": batch_prompt},
+                    ],
+                    temperature=params.get("temperature", 0.3),
+                    max_tokens=params.get("max_tokens", 3000),
                 )
-                if batch_summary:
-                    batch_results.append(batch_summary)
-                    logger.info(f"✅ Batch {batch_num + 1} completed successfully")
-                else:
-                    logger.warning(
-                        f"⚠️ Batch {batch_num + 1} failed to generate summary"
+                
+                # Log the raw OpenAI response for debugging
+                response_content = response.choices[0].message.content
+                logger.info(f"Batch {batch_num + 1} OpenAI response: {len(response_content)} characters")
+                logger.debug(f"Batch {batch_num + 1} raw response: {response_content}")
+                
+                if response_content:
+                    batch_summary = self._parse_summary_response(
+                        response_content, batch_quotes
                     )
+                    batch_results.append(batch_summary)
+                    logger.info(f"Batch {batch_num + 1} processed successfully")
+                else:
+                    logger.warning(f"Empty response for batch {batch_num + 1}")
+                    batch_results.append({})
+                    
+            except Exception as e:
+                logger.error(f"Error processing batch {batch_num + 1}: {e}")
+                logger.exception(f"Full exception details for batch {batch_num + 1}:")
+                # Add empty result for failed batch to maintain batch count
+                batch_results.append({})
                 
                 # Wait between batches to avoid rate limiting
                 if batch_num < num_batches - 1:
                     time.sleep(1.5)
-                    
-            except Exception as e:
-                logger.error(f"❌ Error processing batch {batch_num + 1}: {e}")
-                continue
         
         # Combine batch results into final summary
         if not batch_results:
@@ -210,42 +240,38 @@ class SummaryGenerator:
         return final_summary
     
     def _consolidate_key_takeaways(
-        self, all_takeaways: List[Dict[str, Any]]
+        self, takeaways: List[Dict[str, Any]]
     ) -> List[Dict[str, Any]]:
         """Consolidate key takeaways ensuring exactly 3 quotes per theme."""
-        # Group by theme
+        # Consolidate key takeaways by theme
         theme_groups = {}
-        for takeaway in all_takeaways:
+        for takeaway in takeaways:
             theme = takeaway.get("theme", "")
             if theme:
                 if theme not in theme_groups:
                     theme_groups[theme] = []
                 theme_groups[theme].append(takeaway)
         
-        # Select best 3 quotes per theme
         consolidated = []
-        for theme, takeaways in theme_groups.items():
-            # Sort by relevance/quality if available
+        for theme, takeaway_list in theme_groups.items():
             sorted_takeaways = sorted(
-                takeaways, key=lambda x: len(x.get("quotes", [])), reverse=True
+                takeaway_list, key=lambda x: len(x.get("supporting_quotes", [])), reverse=True
             )
             best_takeaway = sorted_takeaways[0] if sorted_takeaways else {}
             
-            # Ensure exactly 3 quotes
-            quotes = best_takeaway.get("quotes", [])
+            quotes = best_takeaway.get("supporting_quotes", [])
             if len(quotes) >= 3:
-                best_takeaway["quotes"] = quotes[:3]
+                best_takeaway["supporting_quotes"] = quotes[:3]
             elif len(quotes) < 3:
-                # Pad with placeholder if needed
                 while len(quotes) < 3:
                     quotes.append(
                         {
-                            "quote": "Additional quote needed",
-                            "speaker": "Unknown",
-                            "document": "Unknown",
+                            "quote": f"Additional quote needed for {theme}",
+                            "speaker": "Quote Required",
+                            "document": "Additional Analysis Needed",
                         }
                     )
-                best_takeaway["quotes"] = quotes
+                best_takeaway["supporting_quotes"] = quotes
             
             consolidated.append(best_takeaway)
         
@@ -267,13 +293,13 @@ class SummaryGenerator:
         consolidated = []
         for theme, strengths in theme_groups.items():
             sorted_strengths = sorted(
-                strengths, key=lambda x: len(x.get("quotes", [])), reverse=True
+                strengths, key=lambda x: len(x.get("supporting_quotes", [])), reverse=True
             )
             best_strength = sorted_strengths[0] if sorted_strengths else {}
             
-            quotes = best_strength.get("quotes", [])
+            quotes = best_strength.get("supporting_quotes", [])
             if len(quotes) >= 2:
-                best_strength["quotes"] = quotes[:2]
+                best_strength["supporting_quotes"] = quotes[:2]
             elif len(quotes) < 2:
                 while len(quotes) < 2:
                     quotes.append(
@@ -283,7 +309,7 @@ class SummaryGenerator:
                             "document": "Additional Analysis Needed",
                         }
                     )
-                best_strength["quotes"] = quotes
+                best_strength["supporting_quotes"] = quotes
             
             consolidated.append(best_strength)
         
@@ -305,13 +331,13 @@ class SummaryGenerator:
         consolidated = []
         for theme, weaknesses in theme_groups.items():
             sorted_weaknesses = sorted(
-                weaknesses, key=lambda x: len(x.get("quotes", [])), reverse=True
+                weaknesses, key=lambda x: len(x.get("supporting_quotes", [])), reverse=True
             )
             best_weakness = sorted_weaknesses[0] if sorted_weaknesses else {}
             
-            quotes = best_weakness.get("quotes", [])
+            quotes = best_weakness.get("supporting_quotes", [])
             if len(quotes) >= 2:
-                best_weakness["quotes"] = quotes[:2]
+                best_weakness["supporting_quotes"] = quotes[:2]
             elif len(quotes) < 2:
                 while len(quotes) < 2:
                     quotes.append(
@@ -321,7 +347,7 @@ class SummaryGenerator:
                             "document": "Additional Analysis Needed",
                         }
                     )
-                best_weakness["quotes"] = quotes
+                best_weakness["supporting_quotes"] = quotes
             
             consolidated.append(best_weakness)
         
@@ -395,23 +421,36 @@ Please provide a JSON response with key_takeaways, strengths, and weaknesses sec
         try:
             # Check for empty response
             if not response_text or not response_text.strip():
+                logger.warning("Empty response text received from OpenAI")
                 return result
             
             # Use the robust JSON extraction method
             try:
                 json_content = self._extract_json_from_response(response_text)
+                logger.debug(f"Extracted JSON content: {json_content[:200]}...")
                 
                 # Parse the JSON response
                 parsed_data = json.loads(json_content)
+                logger.info(f"Successfully parsed JSON response with keys: {list(parsed_data.keys())}")
                 
                 # Process key takeaways using structured approach with validation
                 if "key_takeaways" in parsed_data and isinstance(
                     parsed_data["key_takeaways"], list
                 ):
+                    logger.info(f"Found {len(parsed_data['key_takeaways'])} key takeaways in OpenAI response")
+                    for i, takeaway in enumerate(parsed_data["key_takeaways"]):
+                        if isinstance(takeaway, dict):
+                            quotes_count = len(takeaway.get("supporting_quotes", []))
+                            logger.info(f"Key takeaway {i+1}: '{takeaway.get('theme', 'Unknown')}' has {quotes_count} quotes")
+                    
                     validated_takeaways = self._validate_and_fix_key_takeaways(
                         parsed_data["key_takeaways"], available_quotes
                     )
                     result["key_takeaways"] = validated_takeaways
+                    logger.info(f"After validation: {len(validated_takeaways)} key takeaways with proper quote counts")
+                else:
+                    logger.warning("No 'key_takeaways' found in OpenAI response or invalid format")
+                    logger.debug(f"Available keys in response: {list(parsed_data.keys())}")
                 
                 # Process strengths with validation
                 if "strengths" in parsed_data and isinstance(
@@ -421,6 +460,9 @@ Please provide a JSON response with key_takeaways, strengths, and weaknesses sec
                         parsed_data["strengths"], available_quotes
                     )
                     result["strengths"] = validated_strengths
+                    logger.info(f"Processed {len(validated_strengths)} strengths")
+                else:
+                    logger.warning("No 'strengths' found in OpenAI response or invalid format")
                 
                 # Process weaknesses with validation
                 if "weaknesses" in parsed_data and isinstance(
@@ -430,16 +472,25 @@ Please provide a JSON response with key_takeaways, strengths, and weaknesses sec
                         parsed_data["weaknesses"], available_quotes
                     )
                     result["weaknesses"] = validated_weaknesses
+                    logger.info(f"Processed {len(validated_weaknesses)} weaknesses")
+                else:
+                    logger.warning("No 'weaknesses' found in OpenAI response or invalid format")
                 
                 logger.info("Summary response parsed and validated successfully")
                 return result
                 
+            except json.JSONDecodeError as e:
+                logger.error(f"JSON parsing error: {e}")
+                logger.error(f"Response text that failed to parse: {response_text[:500]}...")
+                return result
             except Exception as e:
                 logger.error(f"Error parsing JSON response: {e}")
+                logger.exception("Full exception details for JSON parsing:")
                 return result
                 
         except Exception as e:
             logger.error(f"Error in summary response parsing: {e}")
+            logger.exception("Full exception details for response parsing:")
             return result
     
     def _extract_json_from_response(self, response_text: str) -> str:
@@ -466,14 +517,16 @@ Please provide a JSON response with key_takeaways, strengths, and weaknesses sec
         self, takeaways: List[Dict[str, Any]], available_quotes: List[Dict[str, Any]]
     ) -> List[Dict[str, Any]]:
         """Validate and fix key takeaways to ensure exactly 3 quotes per theme."""
+        logger.info(f"Validating {len(takeaways)} key takeaways")
         if not isinstance(takeaways, list):
+            logger.warning("Takeaways is not a list, returning empty")
             return []
 
         validated_takeaways = []
         for takeaway in takeaways:
             if isinstance(takeaway, dict):
                 theme = takeaway.get("theme", "")
-                quotes = takeaway.get("quotes", [])
+                quotes = takeaway.get("supporting_quotes", [])
 
                 # Ensure exactly 3 quotes - this is critical for the structure
                 if len(quotes) < 3:
@@ -530,7 +583,7 @@ Please provide a JSON response with key_takeaways, strengths, and weaknesses sec
         for strength in strengths:
             if isinstance(strength, dict):
                 theme = strength.get("theme", "")
-                quotes = strength.get("quotes", [])
+                quotes = strength.get("supporting_quotes", [])
 
                 # Ensure exactly 2 quotes
                 if len(quotes) < 2:
@@ -585,7 +638,7 @@ Please provide a JSON response with key_takeaways, strengths, and weaknesses sec
         for weakness in weaknesses:
             if isinstance(weakness, dict):
                 theme = weakness.get("theme", "")
-                quotes = weakness.get("quotes", [])
+                quotes = weakness.get("supporting_quotes", [])
 
                 # Ensure exactly 2 quotes
                 if len(quotes) < 2:

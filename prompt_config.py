@@ -153,21 +153,21 @@ QUOTE REQUIREMENTS:
      "key_takeaways": [
        {{
          "theme": "Clear market leadership",
-         "quotes": [
+         "supporting_quotes": [
            {{ "quote": "...", "speaker": "...", "document": "..." }},
            {{ "quote": "...", "speaker": "...", "document": "..." }}
          ]
        }},
        {{
          "theme": "Strong Value Prop Despite Potential Risk of Insourcing",
-         "quotes": [
+         "supporting_quotes": [
            {{ "quote": "...", "speaker": "...", "document": "..." }},
            {{ "quote": "...", "speaker": "...", "document": "..." }}
          ]
        }},
        {{
          "theme": "Local Presence drives Customer Demand",
-         "quotes": [
+         "supporting_quotes": [
            {{ "quote": "...", "speaker": "...", "document": "..." }},
            {{ "quote": "...", "speaker": "...", "document": "..." }}
          ]
@@ -176,13 +176,13 @@ QUOTE REQUIREMENTS:
      "strengths": [
        {{
          "theme": "proprietary technology",
-         "quotes": [
+         "supporting_quotes": [
            {{ "quote": "...", "speaker": "...", "document": "..." }}
          ]
        }},
        {{
          "theme": "rapid turn-around times",
-         "quotes": [
+         "supporting_quotes": [
            {{ "quote": "...", "speaker": "...", "document": "..." }}
          ]
        }}
@@ -190,13 +190,13 @@ QUOTE REQUIREMENTS:
      "weaknesses": [
        {{
          "theme": "limited addressable market",
-         "quotes": [
+         "supporting_quotes": [
            {{ "quote": "...", "speaker": "...", "document": "..." }}
          ]
        }},
        {{
          "theme": "unpredictable event timing",
-         "quotes": [
+         "supporting_quotes": [
            {{ "quote": "...", "speaker": "...", "document": "..." }}
          ]
        }}
