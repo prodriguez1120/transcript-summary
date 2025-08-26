@@ -10,7 +10,7 @@ import argparse
 import sys
 import os
 import logging
-from config_manager import ConfigManager, get_config_manager, set_company
+from settings import get_config_manager, switch_company, SettingsManager
 from logging_config import setup_logger
 
 # Set up logging
@@ -26,7 +26,7 @@ def main():
 Examples:
   python company_switcher.py --list                    # List all companies
   python company_switcher.py --switch flexxray         # Switch to FlexXray
-  python company_switcher.py --switch acme_corp        # Switch to ACME Corp
+  python company_switcher.py --switch techpro          # Switch to TechPro
   python company_switcher.py --info                    # Show current company info
   python company_switcher.py --create startup_xyz      # Create new company
   python company_switcher.py --validate                # Validate transcript directory
@@ -121,7 +121,7 @@ Examples:
         sys.exit(1)
 
 
-def list_companies(config_mgr: ConfigManager):
+def list_companies(config_mgr: SettingsManager):
     """List all available companies."""
     companies = config_mgr.list_companies()
     current = config_mgr.current_company
@@ -138,7 +138,7 @@ def list_companies(config_mgr: ConfigManager):
     print(f"\nCurrent company: {current}")
 
 
-def switch_company(config_mgr: ConfigManager, company_name: str):
+def switch_company(config_mgr: SettingsManager, company_name: str):
     """Switch to a different company."""
     if config_mgr.switch_company(company_name):
         print(f"Successfully switched to {company_name}")
@@ -147,7 +147,7 @@ def switch_company(config_mgr: ConfigManager, company_name: str):
         print(f"Failed to switch to {company_name}")
 
 
-def show_company_info(config_mgr: ConfigManager):
+def show_company_info(config_mgr: SettingsManager):
     """Show current company information."""
     info = config_mgr.get_company_info()
 
@@ -168,7 +168,7 @@ def show_company_info(config_mgr: ConfigManager):
         print(f"  Use --validate to create it")
 
 
-def create_company_interactive(config_mgr: ConfigManager, company_name: str):
+def create_company_interactive(config_mgr: SettingsManager, company_name: str):
     """Create a new company configuration interactively."""
     print(f"Creating new company: {company_name}")
     print("=" * 50)
@@ -273,7 +273,7 @@ def create_company_interactive(config_mgr: ConfigManager, company_name: str):
         print(f"Error creating company: {e}")
 
 
-def validate_transcript_directory(config_mgr: ConfigManager):
+def validate_transcript_directory(config_mgr: SettingsManager):
     """Validate and optionally create transcript directory."""
     if config_mgr.validate_transcript_directory():
         print(f"✓ Transcript directory exists: {config_mgr.get_transcript_directory()}")
@@ -290,7 +290,7 @@ def validate_transcript_directory(config_mgr: ConfigManager):
                 print("✗ Failed to create directory")
 
 
-def show_key_questions(config_mgr: ConfigManager):
+def show_key_questions(config_mgr: SettingsManager):
     """Show current company key questions."""
     questions = config_mgr.get_key_questions()
     categories = config_mgr.get_question_categories()
@@ -308,7 +308,7 @@ def show_key_questions(config_mgr: ConfigManager):
     print(f"\nTotal questions: {len(questions)}")
 
 
-def update_company_config(config_mgr: ConfigManager, updates: list):
+def update_company_config(config_mgr: SettingsManager, updates: list):
     """Update company configuration fields."""
     update_dict = {}
 

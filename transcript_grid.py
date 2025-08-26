@@ -2,6 +2,7 @@ import os
 import json
 import re
 from openai import OpenAI
+from settings import get_openai_api_key
 from typing import List, Dict, Any, Tuple
 from pathlib import Path
 import time
@@ -55,7 +56,7 @@ class TranscriptSummarizer:
         chroma_persist_directory: str = "./chroma_db",
     ):
         """Initialize the transcript summarizer with OpenAI API key and ChromaDB."""
-        self.api_key = api_key or os.getenv("OPENAI_API_KEY")
+        self.api_key = api_key or get_openai_api_key()
         if not self.api_key:
             raise ValueError(
                 "OpenAI API key is required. Set OPENAI_API_KEY environment variable or pass it to the constructor."

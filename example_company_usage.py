@@ -6,8 +6,7 @@ This script demonstrates how to use the new company configuration system
 to easily switch between different companies and their analysis settings.
 """
 
-from config_manager import get_config_manager, set_company
-from company_config import create_custom_company_config
+from settings import get_config_manager, switch_company
 import os
 
 

@@ -9,6 +9,7 @@ import time
 import logging
 import hashlib
 from typing import List, Dict, Any, Optional
+from settings import get_openai_api_key
 
 # ChromaDB imports
 try:
@@ -54,7 +55,7 @@ class VectorDatabaseManager:
         """Initialize VectorDatabaseManager with embedding support."""
         self.logger = logging.getLogger(__name__)
         self.chroma_persist_directory = chroma_persist_directory
-        self.openai_api_key = openai_api_key or os.getenv("OPENAI_API_KEY")
+        self.openai_api_key = openai_api_key or get_openai_api_key()
         self.dev_mode = dev_mode
 
         if not self.openai_api_key:

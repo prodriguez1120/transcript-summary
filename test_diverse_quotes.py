@@ -11,7 +11,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from quote_analysis_tool import ModularQuoteAnalysisTool
-from env_config import get_env_config, get_openai_api_key
+from settings import get_openai_api_key
 
 # Set up logging
 logging.basicConfig(

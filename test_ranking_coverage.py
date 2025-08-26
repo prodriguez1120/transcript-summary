@@ -8,6 +8,7 @@ This script tests the improved ranking formulas and coverage calculation.
 import os
 import sys
 from dotenv import load_dotenv
+from settings import get_openai_api_key
 
 # Load environment variables
 load_dotenv()
@@ -24,8 +25,13 @@ def test_ranking_coverage():
     print("=" * 60)
 
     # Check for API key
-    if not os.getenv("OPENAI_API_KEY"):
-        print("❌ Please set OPENAI_API_KEY environment variable")
+    try:
+        api_key = get_openai_api_key()
+        if not api_key:
+            print("❌ OpenAI API key not found")
+            return
+    except ValueError as e:
+        print(f"❌ {e}")
         return
 
     try:

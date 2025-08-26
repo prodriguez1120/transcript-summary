@@ -4,6 +4,7 @@ import threading
 import os
 import time
 from transcript_grid import TranscriptSummarizer
+from settings import get_openai_api_key
 
 # Import configuration
 try:
@@ -29,8 +30,13 @@ class TranscriptAnalyzerGUI:
         self.max_workers_var = tk.IntVar(value=3)
 
         # Load API key from environment if available
-        if os.getenv("OPENAI_API_KEY"):
-            self.api_key.set(os.getenv("OPENAI_API_KEY"))
+        try:
+            env_api_key = get_openai_api_key()
+            if env_api_key:
+                self.api_key.set(env_api_key)
+        except ValueError:
+            # API key not set in environment, user will need to enter it
+            pass
 
         # Set default directory to "FlexXray Transcripts"
         default_directory = "FlexXray Transcripts"

@@ -12,8 +12,8 @@ from pathlib import Path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from streamlined_quote_analysis import StreamlinedQuoteAnalysis
-from quote_analysis_tool import ModularQuoteAnalysisTool
-from env_config import get_openai_api_key
+from quote_analysis_core import QuoteAnalysisTool
+from settings import get_openai_api_key
 
 # Set up logging
 logging.basicConfig(
@@ -54,10 +54,10 @@ def load_existing_quotes(api_key: str):
 
     # Initialize the existing tool with API key
     try:
-        existing_tool = ModularQuoteAnalysisTool(api_key=api_key)
-        logger.info("✅ ModularQuoteAnalysisTool initialized successfully")
+        existing_tool = QuoteAnalysisTool(api_key=api_key)
+        logger.info("✅ QuoteAnalysisTool initialized successfully")
     except Exception as e:
-        logger.error(f"❌ Failed to initialize ModularQuoteAnalysisTool: {e}")
+        logger.error(f"❌ Failed to initialize QuoteAnalysisTool: {e}")
         return []
 
     # Get the transcript directory
@@ -75,9 +75,11 @@ def load_existing_quotes(api_key: str):
     logger.debug(f"Transcript directory: {os.path.abspath(transcript_dir)}")
 
     try:
-        # Use the existing method that processes all transcripts
-        logger.debug("Calling process_transcripts_for_quotes...")
-        results = existing_tool.process_transcripts_for_quotes(transcript_dir)
+        # Get quotes from vector database using semantic search
+        logger.debug("Searching for quotes in vector database...")
+        # Use a broad search to get all quotes
+        all_quotes = existing_tool.search_quotes_semantically("FlexXray", n_results=1000)
+        results = {"total_quotes": len(all_quotes), "quotes": all_quotes}
         
         # Validate that results is a dictionary
         if not isinstance(results, dict):
@@ -100,21 +102,19 @@ def load_existing_quotes(api_key: str):
             total_quotes = results.get("total_quotes", 0)
             logger.info(f"Total quotes reported: {total_quotes}")
             
-            # If we have quotes stored in vector database, retrieve them
-            if total_quotes > 0:
-                try:
-                    # Use the existing tool's method to get quotes from vector database
-                    # Search for quotes with a broad query to get all quotes
-                    all_quotes = existing_tool.vector_db_manager.semantic_search_quotes(
-                        query="FlexXray company business operations", 
-                        n_results=total_quotes
-                    )
-                    logger.info(f"Retrieved {len(all_quotes)} quotes from vector database")
-                except Exception as e:
-                    logger.error(f"Failed to retrieve quotes from vector database: {e}")
-                    all_quotes = []
-            else:
-                all_quotes = []
+            # Since we just processed transcripts and stored quotes, we can use
+            # the existing tool's vector database to get the quotes we just stored
+            try:
+                # Get quotes from vector database using a simple query
+                all_quotes = existing_tool.search_quotes_semantically(
+                    query="FlexXray", 
+                    n_results=total_quotes
+                )
+                logger.info(f"Retrieved {len(all_quotes)} quotes from vector database")
+            except Exception as e:
+                logger.error(f"Failed to retrieve quotes from vector database: {e}")
+                # If vector database fails, we can't proceed
+                return []
         else:
             logger.error("❌ 'total_quotes' key not found in results")
             logger.error(f"   Available keys: {available_keys}")
@@ -138,15 +138,30 @@ def load_existing_quotes(api_key: str):
                 logger.error(f"❌ Quotes are not dictionaries: {type(sample_quote)}")
                 return []
             
-            # Check for required fields
-            required_fields = ["text", "speaker", "document"]
-            missing_fields = [field for field in required_fields if field not in sample_quote]
-            if missing_fields:
-                logger.error(f"❌ Quotes missing required fields: {missing_fields}")
+            # Check for required fields - quotes from vector database have different structure
+            if "text" in sample_quote and "metadata" in sample_quote:
+                # Vector database format: quotes have text, metadata, distance
+                logger.info(f"✅ Quote structure validated - vector database format detected")
+                logger.info(f"   Sample quote keys: {list(sample_quote.keys())}")
+                
+                # Check if metadata contains speaker and document info
+                metadata = sample_quote.get("metadata", {})
+                logger.info(f"📋 Sample metadata keys: {list(metadata.keys())}")
+                if "speaker" in metadata or "transcript_name" in metadata:
+                    logger.info(f"✅ Metadata contains speaker/transcript information")
+                else:
+                    logger.warning(f"⚠️  Metadata may be missing speaker/transcript info")
+                    
+            elif "text" in sample_quote and "speaker" in sample_quote and "document" in sample_quote:
+                # Direct quote format: quotes have text, speaker, document
+                logger.info(f"✅ Quote structure validated - direct format detected")
+                logger.info(f"   Sample quote keys: {list(sample_quote.keys())}")
+                
+            else:
+                logger.error(f"❌ Quotes missing required fields")
+                logger.error(f"   Expected either vector_db format (text, metadata) or direct format (text, speaker, document)")
                 logger.error(f"   Sample quote keys: {list(sample_quote.keys())}")
                 return []
-            
-            logger.info(f"✅ Quote structure validated - found required fields: {required_fields}")
 
         elapsed_time = time.time() - start_time
         logger.info(f"Total quotes extracted: {len(all_quotes)} in {elapsed_time:.2f} seconds")

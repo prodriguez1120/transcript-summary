@@ -332,7 +332,7 @@ if __name__ == "__main__":
     print(f"Supported formats: {processor.get_supported_formats()}")
 
     # Test with a sample directory
-    test_dir = "Practifi Transcripts"
+    test_dir = "FlexXray Transcripts"
     if os.path.exists(test_dir):
         print(f"\nProcessing directory: {test_dir}")
         results = processor.process_directory(test_dir)

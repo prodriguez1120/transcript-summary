@@ -20,6 +20,15 @@ from dotenv import load_dotenv
 from datetime import datetime
 import numpy as np
 
+# Check if openpyxl is available for Excel export
+try:
+    import openpyxl
+    from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+    from openpyxl.utils import get_column_letter
+    EXCEL_AVAILABLE = True
+except ImportError:
+    EXCEL_AVAILABLE = False
+
 # Load environment variables
 load_dotenv()
 
@@ -64,7 +73,12 @@ class StreamlinedQuoteAnalysis:
         expert_quotes = []
 
         for quote in quotes:
-            if quote.get("speaker_role") != "expert":
+            # Handle both direct format and vector database format
+            speaker_role = quote.get("speaker_role")
+            if not speaker_role and "metadata" in quote:
+                speaker_role = quote.get("metadata", {}).get("speaker_role")
+            
+            if not speaker_role or speaker_role != "expert":
                 continue
 
             text = quote.get("text", "").strip()
@@ -319,8 +333,10 @@ Provide a JSON array with reranked indices (0-based) and detailed scoring:
                 output += "   Supporting quotes:\n"
 
                 for quote in quotes:
-                    speaker_info = quote.get("speaker_info", "Unknown Speaker")
-                    transcript_name = quote.get("transcript_name", "Unknown Transcript")
+                    # Extract speaker and transcript info from metadata (vector DB format)
+                    metadata = quote.get("metadata", {})
+                    speaker_info = metadata.get("speaker_role", metadata.get("speaker", quote.get("speaker_info", "Unknown Speaker")))
+                    transcript_name = metadata.get("transcript_name", quote.get("transcript_name", "Unknown Transcript"))
                     quote_text = quote.get("text", "")
 
                     output += f'     - "{quote_text}" - {speaker_info} from {transcript_name}\n'
@@ -357,10 +373,185 @@ Provide a JSON array with reranked indices (0-based) and detailed scoring:
         with open(json_file, "w", encoding="utf-8") as f:
             json.dump(summary_results, f, indent=2, ensure_ascii=False)
 
+        # Export to Excel
+        excel_file = self.export_to_excel(summary_results, output_dir)
+
         print(f"Summary saved to: {output_file}")
         print(f"Raw results saved to: {json_file}")
+        if excel_file:
+            print(f"Excel summary saved to: {excel_file}")
 
         return output_file
+
+    def export_to_excel(
+        self, summary_results: Dict[str, Any], output_dir: str = "Outputs"
+    ) -> str:
+        """Export streamlined summary results to Excel file."""
+        if not EXCEL_AVAILABLE:
+            print("openpyxl not available for Excel export")
+            return ""
+
+        # Create output directory if it doesn't exist
+        os.makedirs(output_dir, exist_ok=True)
+
+        # Generate timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        excel_file = os.path.join(
+            output_dir, f"FlexXray_Streamlined_Summary_{timestamp}.xlsx"
+        )
+
+        try:
+            # Create workbook and worksheet
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            if ws is None:
+                raise Exception("Failed to create worksheet")
+            ws.title = "Streamlined Analysis"
+
+            # Define styles
+            header_font = Font(bold=True, size=14, color="FFFFFF")
+            section_font = Font(bold=True, size=12)
+            quote_font = Font(size=10)
+            header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+            section_fill = PatternFill(start_color="D9E2F3", end_color="D9E2F3", fill_type="solid")
+            border = Border(
+                left=Side(style='thin'),
+                right=Side(style='thin'),
+                top=Side(style='thin'),
+                bottom=Side(style='thin')
+            )
+
+            # Set column widths
+            ws.column_dimensions['A'].width = 15
+            ws.column_dimensions['B'].width = 80
+            ws.column_dimensions['C'].width = 20
+            ws.column_dimensions['D'].width = 10
+
+            row = 1
+
+            # Add title
+            ws.merge_cells(f'A{row}:D{row}')
+            ws[f'A{row}'] = "FlexXray Streamlined Quote Analysis"
+            ws[f'A{row}'].font = Font(bold=True, size=16)
+            ws[f'A{row}'].alignment = Alignment(horizontal='center')
+            ws[f'A{row}'].fill = header_fill
+            row += 2
+
+            # Add timestamp
+            ws[f'A{row}'] = f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+            ws[f'A{row}'].font = Font(italic=True)
+            row += 2
+
+            # Process each category
+            for category, results in summary_results.items():
+                # Add category header
+                category_title = category.replace("_", " ").title()
+                ws.merge_cells(f'A{row}:D{row}')
+                ws[f'A{row}'] = category_title
+                ws[f'A{row}'].font = section_font
+                ws[f'A{row}'].fill = section_fill
+                ws[f'A{row}'].alignment = Alignment(horizontal='center')
+                row += 1
+
+                # Add column headers
+                ws[f'A{row}'] = "Question"
+                ws[f'B{row}'] = "Supporting Quotes"
+                ws[f'C{row}'] = "Speaker/Transcript"
+                ws[f'D{row}'] = "Score"
+                
+                for col in ['A', 'B', 'C', 'D']:
+                    ws[f'{col}{row}'].font = Font(bold=True)
+                    ws[f'{col}{row}'].fill = section_fill
+                    ws[f'{col}{row}'].border = border
+                row += 1
+
+                # Add questions and quotes
+                for i, result in enumerate(results, 1):
+                    question = result["question"]
+                    quotes = result["selected_quotes"]
+                    final_scores = result.get("final_scores", [])
+
+                    # Add question
+                    ws[f'A{row}'] = f"{i}. {question}"
+                    ws[f'A{row}'].font = Font(bold=True)
+                    ws[f'A{row}'].alignment = Alignment(wrap_text=True, vertical='top')
+                    ws[f'A{row}'].border = border
+                    
+                    # Add quotes
+                    quote_texts = []
+                    speaker_infos = []
+                    scores = []
+                    
+                    for j, quote in enumerate(quotes):
+                        quote_text = quote.get("text", "")
+                        # Extract speaker and transcript info from metadata (vector DB format)
+                        metadata = quote.get("metadata", {})
+                        speaker_info = metadata.get("speaker_role", metadata.get("speaker", quote.get("speaker_info", "Unknown Speaker")))
+                        transcript_name = metadata.get("transcript_name", quote.get("transcript_name", "Unknown Transcript"))
+                        score = final_scores[j] if j < len(final_scores) else 0
+                        
+                        quote_texts.append(f'"{quote_text}"')
+                        speaker_infos.append(f"{speaker_info} from {transcript_name}")
+                        scores.append(score)
+
+                    ws[f'B{row}'] = "\n\n".join(quote_texts)
+                    ws[f'B{row}'].font = quote_font
+                    ws[f'B{row}'].alignment = Alignment(wrap_text=True, vertical='top')
+                    ws[f'B{row}'].border = border
+
+                    ws[f'C{row}'] = "\n".join(speaker_infos)
+                    ws[f'C{row}'].font = quote_font
+                    ws[f'C{row}'].alignment = Alignment(wrap_text=True, vertical='top')
+                    ws[f'C{row}'].border = border
+
+                    avg_score = sum(scores) / len(scores) if scores else 0
+                    ws[f'D{row}'] = f"{avg_score:.1f}"
+                    ws[f'D{row}'].font = quote_font
+                    ws[f'D{row}'].alignment = Alignment(horizontal='center')
+                    ws[f'D{row}'].border = border
+
+                    row += 1
+
+                row += 1  # Add space between categories
+
+            # Add summary statistics
+            ws.merge_cells(f'A{row}:D{row}')
+            ws[f'A{row}'] = "Summary Statistics"
+            ws[f'A{row}'].font = section_font
+            ws[f'A{row}'].fill = section_fill
+            ws[f'A{row}'].alignment = Alignment(horizontal='center')
+            row += 1
+
+            # Calculate and add statistics
+            total_questions = sum(len(results) for results in summary_results.values())
+            total_quotes = sum(len(result["selected_quotes"]) for results in summary_results.values() for result in results)
+            all_scores = [score for results in summary_results.values() for result in results for score in result.get("final_scores", [])]
+            avg_score = sum(all_scores) / len(all_scores) if all_scores else 0
+
+            stats = [
+                ("Total Questions Analyzed", str(total_questions)),
+                ("Total Quotes Selected", str(total_quotes)),
+                ("Average Relevance Score", f"{avg_score:.1f}"),
+                ("Analysis Categories", str(len(summary_results)))
+            ]
+
+            for stat_name, stat_value in stats:
+                ws[f'A{row}'] = stat_name
+                ws[f'B{row}'] = stat_value
+                ws[f'A{row}'].font = Font(bold=True)
+                ws[f'B{row}'].font = Font(bold=True)
+                ws[f'A{row}'].border = border
+                ws[f'B{row}'].border = border
+                row += 1
+
+            # Save the workbook
+            wb.save(excel_file)
+            print(f"Excel summary saved to: {excel_file}")
+            return excel_file
+
+        except Exception as e:
+            print(f"Error exporting to Excel: {e}")
+            return ""
 
 
 def main():

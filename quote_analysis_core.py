@@ -13,6 +13,7 @@ import os
 import json
 import re
 from openai import OpenAI
+from settings import get_openai_api_key
 from typing import List, Dict, Any, Tuple, Optional, Union
 from pathlib import Path
 import time
@@ -58,7 +59,7 @@ class QuoteAnalysisTool:
         # Set up logger
         self.logger = logging.getLogger(__name__)
         
-        self.api_key = api_key or os.getenv('OPENAI_API_KEY')
+        self.api_key = api_key or get_openai_api_key()
         if not self.api_key:
             self.logger.error("OpenAI API key is required. Set OPENAI_API_KEY environment variable or pass it to the constructor.")
             raise ValueError("OpenAI API key is required. Set OPENAI_API_KEY environment variable or pass it to the constructor.")
