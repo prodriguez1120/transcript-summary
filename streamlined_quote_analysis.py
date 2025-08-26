@@ -34,7 +34,7 @@ load_dotenv()
 
 
 class StreamlinedQuoteAnalysis:
-    def __init__(self, api_key: str = None):
+    def __init__(self, api_key: Optional[str] = None):
         """Initialize the streamlined quote analysis tool."""
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
         if not self.api_key:
@@ -165,13 +165,32 @@ Please respond with a JSON array of objects:
                 max_tokens=1000,
             )
 
-            # Parse response
+            # Parse response with proper error handling
             content = response.choices[0].message.content
-            scores = json.loads(content)
+            if not content or not content.strip():
+                print("Warning: Empty response from OpenAI API")
+                return quotes[:top_k]
+            
+            try:
+                scores = json.loads(content)
+            except json.JSONDecodeError as json_error:
+                print(f"JSON parsing error: {json_error}")
+                print(f"Raw response content: {content[:200]}...")
+                # Fallback: return quotes in original order
+                return quotes[:top_k]
+
+            # Validate scores structure
+            if not isinstance(scores, list):
+                print(f"Warning: Expected list, got {type(scores)}")
+                return quotes[:top_k]
 
             # Sort quotes by score
             ranked_quotes = []
             for score_data in scores:
+                if not isinstance(score_data, dict):
+                    print(f"Warning: Expected dict in scores, got {type(score_data)}")
+                    continue
+                    
                 quote_index = score_data.get("quote_index", 0)
                 relevance_score = score_data.get("relevance_score", 0)
 
@@ -237,13 +256,32 @@ Provide a JSON array with reranked indices (0-based) and detailed scoring:
                 max_tokens=1500,
             )
 
-            # Parse response
+            # Parse response with proper error handling
             content = response.choices[0].message.content
-            rerank_scores = json.loads(content)
+            if not content or not content.strip():
+                print("Warning: Empty response from OpenAI API during reranking")
+                return quotes[:top_k]
+            
+            try:
+                rerank_scores = json.loads(content)
+            except json.JSONDecodeError as json_error:
+                print(f"JSON parsing error during reranking: {json_error}")
+                print(f"Raw response content: {content[:200]}...")
+                # Fallback: return quotes in original order
+                return quotes[:top_k]
+
+            # Validate rerank_scores structure
+            if not isinstance(rerank_scores, list):
+                print(f"Warning: Expected list in reranking, got {type(rerank_scores)}")
+                return quotes[:top_k]
 
             # Create final reranked list
             reranked_quotes = []
             for score_data in rerank_scores:
+                if not isinstance(score_data, dict):
+                    print(f"Warning: Expected dict in rerank scores, got {type(score_data)}")
+                    continue
+                    
                 quote_index = score_data.get("quote_index", 0)
                 final_score = score_data.get("final_score", 0)
 
@@ -351,6 +389,20 @@ Provide a JSON array with reranked indices (0-based) and detailed scoring:
         self, summary_results: Dict[str, Any], output_dir: str = "Outputs"
     ) -> str:
         """Save the summary results to files."""
+        # Validate summary_results
+        if not summary_results:
+            print("Warning: No summary results to save")
+            return ""
+        
+        if not isinstance(summary_results, dict):
+            print(f"Warning: Expected dict for summary_results, got {type(summary_results)}")
+            return ""
+        
+        # Check if summary_results has any content
+        if not any(summary_results.values()):
+            print("Warning: Summary results are empty")
+            return ""
+        
         # Create output directory if it doesn't exist
         os.makedirs(output_dir, exist_ok=True)
 
@@ -376,10 +428,17 @@ Provide a JSON array with reranked indices (0-based) and detailed scoring:
         # Export to Excel
         excel_file = self.export_to_excel(summary_results, output_dir)
 
-        print(f"Summary saved to: {output_file}")
-        print(f"Raw results saved to: {json_file}")
+        # Log exact paths with absolute paths for clarity
+        abs_output_file = os.path.abspath(output_file)
+        abs_json_file = os.path.abspath(json_file)
+        
+        print(f"Summary saved to: {abs_output_file}")
+        print(f"Raw results saved to: {abs_json_file}")
         if excel_file:
-            print(f"Excel summary saved to: {excel_file}")
+            abs_excel_file = os.path.abspath(excel_file)
+            print(f"Excel summary saved to: {abs_excel_file}")
+        else:
+            print("Excel export was not available or failed")
 
         return output_file
 
@@ -389,6 +448,15 @@ Provide a JSON array with reranked indices (0-based) and detailed scoring:
         """Export streamlined summary results to Excel file."""
         if not EXCEL_AVAILABLE:
             print("openpyxl not available for Excel export")
+            return ""
+
+        # Validate summary_results
+        if not summary_results:
+            print("Warning: No summary results to export to Excel")
+            return ""
+        
+        if not isinstance(summary_results, dict):
+            print(f"Warning: Expected dict for summary_results in Excel export, got {type(summary_results)}")
             return ""
 
         # Create output directory if it doesn't exist

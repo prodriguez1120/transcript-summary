@@ -370,8 +370,17 @@ class SettingsManager:
                 # Load company configurations
                 companies = {}
                 for company_data in config_data.get("companies", []):
-                    company_config = CompanyConfig(**company_data)
-                    companies[company_config.name] = company_config
+                    # Ensure company_data is a dictionary
+                    if isinstance(company_data, dict):
+                        try:
+                            company_config = CompanyConfig(**company_data)
+                            companies[company_config.name] = company_config
+                        except Exception as e:
+                            print(f"Warning: Could not load company config {company_data}: {e}")
+                            continue
+                    else:
+                        print(f"Warning: Expected dict for company config, got {type(company_data)}: {company_data}")
+                        continue
                 
                 # Create settings with loaded companies
                 config_data["companies"] = companies

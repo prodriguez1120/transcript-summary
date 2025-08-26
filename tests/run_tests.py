@@ -8,6 +8,12 @@ This script runs all comprehensive unit tests including:
 - Perspective Analysis: perspective_analysis.py
 - Quote Processing: quote extraction, filtering, and export
 - System Integration: streamlined system and prompt management
+- RAG Functionality: vector database semantic search and retrieval
+- Modular Analysis: refactored perspective analysis components
+- Ranking & Coverage: quote ranking and selection stage tracking
+- Batch Processing: batch processing capabilities for quote ranking
+- Quote Enrichment: quote enrichment and export functionality
+- Formatting & Tools: code formatting and save detection tools
 """
 
 import unittest
@@ -55,6 +61,12 @@ def show_help():
         "  - Validation & Error Handling: test_error_handling, test_perspective_analysis"
     )
     print("  - System Integration: test_streamlined_system, test_prompt_system")
+    print("  - RAG Functionality: test_rag_functionality, test_main_rag_integration")
+    print("  - Modular Analysis: test_modular_perspective_analysis, test_refactored_modules")
+    print("  - Ranking & Coverage: test_ranking_coverage, test_diverse_quotes")
+    print("  - Batch Processing: test_batch_processing")
+    print("  - Quote Enrichment: test_quote_enrichment, test_real_quotes_enrichment")
+    print("  - Formatting & Tools: test_formatting, test_save_detection")
     print("")
     print("Examples:")
     print("  python run_tests.py                    # Run all tests")
@@ -63,6 +75,9 @@ def show_help():
         "  python run_tests.py test_perspective_analysis   # Run perspective analysis tests"
     )
     print("  python run_tests.py test_fuzzy_logic   # Run specific test file")
+    print("  python run_tests.py test_rag_functionality   # Run RAG functionality tests")
+    print("  python run_tests.py test_quote_enrichment   # Run quote enrichment tests")
+    print("  python run_tests.py test_batch_processing   # Run batch processing tests")
     print("  python run_tests.py --help             # Show this help")
 
 
