@@ -565,6 +565,304 @@ class ExportManager:
             print(f"Unexpected error exporting quotes to Excel: {e}")
             return ""
 
+    def export_quote_analysis_to_excel(
+        self, results: Dict[str, Any], output_file: str = None
+    ) -> str:
+        """Export quote analysis results to Excel with enhanced segmentation."""
+        if not EXCEL_AVAILABLE:
+            print("openpyxl not available for Excel export")
+            return ""
+
+        if not output_file:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            output_file = os.path.join(
+                self.output_directory, f"FlexXray_Enhanced_Analysis_{timestamp}.xlsx"
+            )
+
+        try:
+            # Create workbook
+            wb = openpyxl.Workbook()
+            
+            # Define styles
+            title_font = Font(bold=True, size=16, color="FFFFFF")
+            header_font = Font(bold=True, size=14, color="FFFFFF")
+            section_font = Font(bold=True, size=12, color="FFFFFF")
+            question_font = Font(bold=True, size=11, color="000000")
+            quote_font = Font(italic=True, size=10)
+            metadata_font = Font(size=9, color="666666")
+            
+            title_fill = PatternFill(start_color="1F4E79", end_color="1F4E79", fill_type="solid")
+            header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+            section_fill = PatternFill(start_color="70AD47", end_color="70AD47", fill_type="solid")
+            strength_fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
+            weakness_fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
+            takeaway_fill = PatternFill(start_color="FFEB9C", end_color="FFEB9C", fill_type="solid")
+
+            # ============================================================================
+            # KEY TAKEAWAYS SHEET
+            # ============================================================================
+            ws_takeaways = wb.active
+            if ws_takeaways is None:
+                ws_takeaways = wb.create_sheet("Key Takeaways")
+            else:
+                ws_takeaways.title = "Key Takeaways"
+            
+            # Title
+            ws_takeaways["A1"] = "KEY TAKEAWAYS & INSIGHTS"
+            ws_takeaways["A1"].font = title_font
+            ws_takeaways["A1"].fill = title_fill
+            ws_takeaways.merge_cells("A1:F1")
+            
+            # Headers
+            headers = ["Question", "Key Question", "Quote Text", "Speaker", "Transcript", "Relevance Score"]
+            for col, header in enumerate(headers, 1):
+                cell = ws_takeaways.cell(row=3, column=col, value=header)
+                cell.font = header_font
+                cell.fill = header_fill
+                cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            
+            current_row = 4
+            
+            # Process key takeaways
+            key_takeaways = results.get("key_takeaways", [])
+            for takeaway in key_takeaways:
+                question = takeaway.get("question", "")
+                question_key = takeaway.get("question_key", "")
+                
+                # Write question header
+                question_cell = ws_takeaways[f"A{current_row}"]
+                question_cell.value = question
+                question_cell.font = question_font
+                question_cell.fill = takeaway_fill
+                question_cell.alignment = Alignment(wrap_text=True, vertical="top")
+                
+                # Question key
+                ws_takeaways[f"B{current_row}"] = question_key
+                ws_takeaways[f"B{current_row}"].fill = takeaway_fill
+                
+                # Merge question row
+                ws_takeaways.merge_cells(f"A{current_row}:F{current_row}")
+                current_row += 1
+                
+                # Write quotes for this takeaway
+                quotes = takeaway.get("selected_quotes", [])
+                for quote in quotes:
+                    # Quote text
+                    quote_cell = ws_takeaways[f"C{current_row}"]
+                    quote_cell.value = quote.get("text", "")
+                    quote_cell.font = quote_font
+                    quote_cell.alignment = Alignment(wrap_text=True, vertical="top")
+                    
+                    # Speaker info
+                    metadata = quote.get("metadata", {})
+                    speaker = metadata.get("transcript_name", "").split(" - ")[0] if metadata.get("transcript_name") else ""
+                    ws_takeaways[f"D{current_row}"] = speaker
+                    
+                    # Transcript name
+                    transcript = metadata.get("transcript_name", "")
+                    ws_takeaways[f"E{current_row}"] = transcript
+                    
+                    # Relevance score
+                    relevance = quote.get("relevance_score", 0)
+                    ws_takeaways[f"F{current_row}"] = relevance
+                    
+                    current_row += 1
+                
+                current_row += 1  # Add space between takeaways
+            
+            # Set column widths
+            column_widths = {"A": 50, "B": 20, "C": 80, "D": 25, "E": 40, "F": 15}
+            for col_letter, width in column_widths.items():
+                ws_takeaways.column_dimensions[col_letter].width = width
+            
+            # ============================================================================
+            # STRENGTHS & WEAKNESSES SHEET
+            # ============================================================================
+            ws_swot = wb.create_sheet("Strengths & Weaknesses")
+            
+            # Title
+            ws_swot["A1"] = "STRENGTHS & WEAKNESSES ANALYSIS"
+            ws_swot["A1"].font = title_font
+            ws_swot["A1"].fill = title_fill
+            ws_swot.merge_cells("A1:F1")
+            
+            # Headers
+            headers = ["Category", "Insight", "Quote Text", "Speaker", "Transcript", "Score"]
+            for col, header in enumerate(headers, 1):
+                cell = ws_swot.cell(row=3, column=col, value=header)
+                cell.font = header_font
+                cell.fill = header_fill
+                cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            
+            current_row = 4
+            
+            # Process strengths
+            strengths = results.get("strengths", [])
+            if strengths:
+                # Strengths header
+                strength_header = ws_swot[f"A{current_row}"]
+                strength_header.value = "STRENGTHS"
+                strength_header.font = section_font
+                strength_header.fill = section_fill
+                ws_swot.merge_cells(f"A{current_row}:F{current_row}")
+                current_row += 1
+                
+                for strength in strengths:
+                    # Insight
+                    insight = strength.get("insight", strength.get("theme", ""))
+                    ws_swot[f"B{current_row}"] = insight
+                    ws_swot[f"B{current_row}"].font = question_font
+                    ws_swot[f"B{current_row}"].fill = strength_fill
+                    
+                    # Category
+                    ws_swot[f"A{current_row}"] = "Strength"
+                    ws_swot[f"A{current_row}"].fill = strength_fill
+                    
+                    # Merge insight row
+                    ws_swot.merge_cells(f"A{current_row}:F{current_row}")
+                    current_row += 1
+                    
+                    # Supporting quotes
+                    quotes = strength.get("supporting_quotes", strength.get("quotes", []))
+                    for quote in quotes:
+                        if isinstance(quote, dict):
+                            quote_text = quote.get("formatted_text", quote.get("text", quote.get("quote", "")))
+                            speaker = quote.get("speaker", quote.get("speaker_info", "Unknown"))
+                            document = quote.get("document", quote.get("transcript_name", "Unknown"))
+                            
+                            ws_swot[f"C{current_row}"] = quote_text
+                            ws_swot[f"C{current_row}"].font = quote_font
+                            ws_swot[f"D{current_row}"] = speaker
+                            ws_swot[f"E{current_row}"] = document
+                            
+                            current_row += 1
+                    
+                    current_row += 1
+            
+            # Process weaknesses
+            weaknesses = results.get("weaknesses", [])
+            if weaknesses:
+                # Weaknesses header
+                weakness_header = ws_swot[f"A{current_row}"]
+                weakness_header.value = "WEAKNESSES"
+                weakness_header.font = section_font
+                weakness_header.fill = section_fill
+                ws_swot.merge_cells(f"A{current_row}:F{current_row}")
+                current_row += 1
+                
+                for weakness in weaknesses:
+                    # Insight
+                    insight = weakness.get("insight", weakness.get("theme", ""))
+                    ws_swot[f"B{current_row}"] = insight
+                    ws_swot[f"B{current_row}"].font = question_font
+                    ws_swot[f"B{current_row}"].fill = weakness_fill
+                    
+                    # Category
+                    ws_swot[f"A{current_row}"] = "Weakness"
+                    ws_swot[f"A{current_row}"].fill = weakness_fill
+                    
+                    # Merge insight row
+                    ws_swot.merge_cells(f"A{current_row}:F{current_row}")
+                    current_row += 1
+                    
+                    # Supporting quotes
+                    quotes = weakness.get("supporting_quotes", weakness.get("quotes", []))
+                    for quote in quotes:
+                        if isinstance(quote, dict):
+                            quote_text = quote.get("formatted_text", quote.get("text", quote.get("quote", "")))
+                            speaker = quote.get("speaker", quote.get("speaker_info", "Unknown"))
+                            document = quote.get("document", quote.get("transcript_name", "Unknown"))
+                            
+                            ws_swot[f"C{current_row}"] = quote_text
+                            ws_swot[f"C{current_row}"].font = quote_font
+                            ws_swot[f"D{current_row}"] = speaker
+                            ws_swot[f"E{current_row}"] = document
+                            
+                            current_row += 1
+                    
+                    current_row += 1
+            
+            # Set column widths for SWOT sheet
+            column_widths = {"A": 15, "B": 50, "C": 80, "D": 25, "E": 40, "F": 15}
+            for col_letter, width in column_widths.items():
+                ws_swot.column_dimensions[col_letter].width = width
+            
+            # ============================================================================
+            # QUOTES SUMMARY SHEET
+            # ============================================================================
+            ws_quotes = wb.create_sheet("Quotes Summary")
+            
+            # Title
+            ws_quotes["A1"] = "QUOTES SUMMARY & METADATA"
+            ws_quotes["A1"].font = title_font
+            ws_quotes["A1"].fill = title_fill
+            ws_quotes.merge_cells("A1:I1")
+            
+            # Headers
+            headers = ["Quote ID", "Quote Text", "Speaker", "Company/Title", "Transcript", "Sentiment", "Relevance Score", "Theme", "Date"]
+            for col, header in enumerate(headers, 1):
+                cell = ws_quotes.cell(row=3, column=col, value=header)
+                cell.font = header_font
+                cell.fill = header_fill
+                cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            
+            current_row = 4
+            
+            # Collect all quotes from key takeaways
+            all_quotes = []
+            for takeaway in key_takeaways:
+                quotes = takeaway.get("selected_quotes", [])
+                for quote in quotes:
+                    quote_data = {
+                        "id": f"Q{len(all_quotes)+1:03d}",
+                        "text": quote.get("text", ""),
+                        "speaker": quote.get("metadata", {}).get("transcript_name", "").split(" - ")[0] if quote.get("metadata", {}).get("transcript_name") else "",
+                        "company_title": quote.get("metadata", {}).get("transcript_name", "").split(" - ")[1] if quote.get("metadata", {}).get("transcript_name") and " - " in quote.get("metadata", {}).get("transcript_name", "") else "",
+                        "transcript": quote.get("metadata", {}).get("transcript_name", ""),
+                        "sentiment": "Positive" if quote.get("relevance_score", 0) >= 7 else "Neutral" if quote.get("relevance_score", 0) >= 5 else "Negative",
+                        "relevance_score": quote.get("relevance_score", 0),
+                        "theme": takeaway.get("question_key", ""),
+                        "date": datetime.fromtimestamp(quote.get("metadata", {}).get("timestamp", 0)).strftime("%Y-%m-%d") if quote.get("metadata", {}).get("timestamp") else ""
+                    }
+                    all_quotes.append(quote_data)
+            
+            # Write quote data
+            for quote_data in all_quotes:
+                for col, (key, value) in enumerate(quote_data.items(), 1):
+                    cell = ws_quotes.cell(row=current_row, column=col, value=value)
+                    if key == "text":
+                        cell.font = quote_font
+                        cell.alignment = Alignment(wrap_text=True, vertical="top")
+                    elif key == "relevance_score":
+                        cell.alignment = Alignment(horizontal="center")
+                
+                current_row += 1
+            
+            # Set column widths for quotes sheet
+            column_widths = {"A": 10, "B": 80, "C": 20, "D": 25, "E": 30, "F": 15, "G": 15, "H": 20, "I": 15}
+            for col_letter, width in column_widths.items():
+                ws_quotes.column_dimensions[col_letter].width = width
+            
+            # Set row heights for quote rows
+            for row in range(4, current_row):
+                ws_quotes.row_dimensions[row].height = 60
+            
+            # Freeze panes
+            ws_takeaways.freeze_panes = "A4"
+            ws_swot.freeze_panes = "A4"
+            ws_quotes.freeze_panes = "A4"
+            
+            # Save workbook
+            wb.save(output_file)
+            wb.close()
+            
+            print(f"Enhanced quote analysis exported to Excel: {output_file}")
+            return output_file
+            
+        except Exception as e:
+            print(f"Error exporting enhanced quote analysis to Excel: {e}")
+            return ""
+
     def _extract_section(self, text: str, section_header: str) -> str:
         """Extract a section from text based on header."""
         lines = text.split("\n")

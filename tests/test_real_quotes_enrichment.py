@@ -16,7 +16,7 @@ from pathlib import Path
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, parent_dir)
 
-from quote_analysis_tool import ModularQuoteAnalysisTool
+from streamlined_quote_analysis import StreamlinedQuoteAnalysis
 
 
 class TestRealQuotesEnrichment(unittest.TestCase):
@@ -25,7 +25,7 @@ class TestRealQuotesEnrichment(unittest.TestCase):
     def setUp(self):
         """Set up test fixtures."""
         # Initialize the tool
-        self.tool = ModularQuoteAnalysisTool()
+        self.tool = StreamlinedQuoteAnalysis()
         
         # Find the most recent JSON file
         outputs_dir = Path("Outputs")
@@ -41,7 +41,8 @@ class TestRealQuotesEnrichment(unittest.TestCase):
     def test_tool_initialization(self):
         """Test that the tool initializes correctly."""
         self.assertIsNotNone(self.tool)
-        self.assertTrue(hasattr(self.tool, 'enrich_quotes_for_export'))
+        self.assertTrue(hasattr(self.tool, 'key_questions'))
+        self.assertTrue(hasattr(self.tool, 'client'))
 
     def test_with_real_quotes(self):
         """Test quote enrichment with real quotes from existing JSON files."""
@@ -62,28 +63,17 @@ class TestRealQuotesEnrichment(unittest.TestCase):
         # Take first 5 quotes as sample
         sample_quotes = all_quotes[:5]
         
-        # Enrich the quotes
-        enriched_quotes = self.tool.enrich_quotes_for_export(sample_quotes)
+        # Filter expert quotes
+        expert_quotes = self.tool.get_expert_quotes_only(sample_quotes)
         
-        # Verify enrichment
-        self.assertEqual(len(enriched_quotes), len(sample_quotes))
+        # Verify filtering
+        self.assertIsInstance(expert_quotes, list)
+        self.assertLessEqual(len(expert_quotes), len(sample_quotes))
         
-        for quote in enriched_quotes:
-            self.assertIn("speaker_info", quote)
-            self.assertIn("sentiment", quote)
-            self.assertIn("theme", quote)
-            self.assertIn("date", quote)
-            self.assertIn("relevance_score", quote)
-            
-            # Verify speaker_info structure
-            speaker_info = quote["speaker_info"]
-            self.assertIsInstance(speaker_info, dict)
-            self.assertIn("name", speaker_info)
-            self.assertIn("company", speaker_info)
-            self.assertIn("title", speaker_info)
-            
-            # Verify relevance_score is numeric
-            self.assertIsInstance(quote["relevance_score"], (int, float))
+        for quote in expert_quotes:
+            self.assertEqual(quote["speaker_role"], "expert")
+            self.assertIn("text", quote)
+            self.assertIn("transcript_name", quote)
 
     def test_excel_export_with_real_quotes(self):
         """Test Excel export with real enriched quotes."""
@@ -104,12 +94,9 @@ class TestRealQuotesEnrichment(unittest.TestCase):
         # Take first 3 quotes as sample
         sample_quotes = all_quotes[:3]
         
-        # Enrich the quotes
-        enriched_quotes = self.tool.enrich_quotes_for_export(sample_quotes)
-        
         # Test export functionality
         try:
-            excel_file = self.tool.export_quotes_to_excel(enriched_quotes)
+            excel_file = self.tool.export_to_excel(sample_quotes, "test_real_quotes.xlsx")
             if excel_file:
                 self.assertTrue(os.path.exists(excel_file))
                 # Clean up the test file

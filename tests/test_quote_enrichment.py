@@ -16,7 +16,7 @@ from pathlib import Path
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, parent_dir)
 
-from quote_analysis_tool import ModularQuoteAnalysisTool
+from streamlined_quote_analysis import StreamlinedQuoteAnalysis
 
 
 class TestQuoteEnrichment(unittest.TestCase):
@@ -25,187 +25,116 @@ class TestQuoteEnrichment(unittest.TestCase):
     def setUp(self):
         """Set up test fixtures."""
         # Initialize the tool
-        self.tool = ModularQuoteAnalysisTool()
+        self.tool = StreamlinedQuoteAnalysis()
 
     def test_tool_initialization(self):
         """Test that the tool initializes correctly."""
         self.assertIsNotNone(self.tool)
-        self.assertTrue(hasattr(self.tool, 'enrich_quotes_for_export'))
+        self.assertTrue(hasattr(self.tool, 'key_questions'))
+        self.assertTrue(hasattr(self.tool, 'client'))
 
-    def test_quote_enrichment(self):
-        """Test the quote enrichment functionality."""
-        # Sample quotes with missing fields (simulating current state)
-        # Including various relevance_score edge cases to test numeric handling
+    def test_expert_quotes_filtering(self):
+        """Test expert quotes filtering functionality."""
+        # Sample quotes with mixed speaker roles
         sample_quotes = [
             {
                 "text": "FlexXray has a strong competitive advantage in the market due to our proprietary technology.",
                 "speaker_role": "expert",
                 "transcript_name": "Randy_Jesberg- Former CEO - Initial Conversation (06.26.2025)",
                 "position": 45,
-                "has_insight": True,
-                "relevance_score": 8.5,  # Normal numeric value
-                "focus_area_matched": "competitive advantages",
-                "metadata": {
-                    "timestamp": 1756011468.6354835,
-                    "has_insight": True,
-                    "speaker_role": "expert",
-                    "transcript_name": "Randy_Jesberg- Former CEO - Initial Conversation (06.26.2025)",
-                    "position": 45,
-                },
             },
             {
-                "text": "The main challenge we face is the limited addressable market size.",
-                "speaker_role": "expert",
-                "transcript_name": "Cheryl Bertics - FlexXray Foreign Material Inspection Services - Former Manager",
-                "position": 23,
-                "has_insight": True,
-                "relevance_score": None,  # None value - should become 0.0
-                "focus_area_matched": "market limitations",
-                "metadata": {
-                    "timestamp": 1756011467.8782463,
-                    "has_insight": True,
-                    "speaker_role": "expert",
-                    "transcript_name": "Cheryl Bertics - FlexXray Foreign Material Inspection Services - Former Manager",
-                    "position": 23,
-                },
+                "text": "Can you tell me more about that?",
+                "speaker_role": "interviewer",
+                "transcript_name": "Interviewer - Follow Up",
+                "position": 46,
             },
             {
                 "text": "Our rapid turnaround times give us a significant advantage over competitors.",
                 "speaker_role": "expert",
                 "transcript_name": "George Perry-West - Pegasus Foods, Inc - Former FSQA Manager",
                 "position": 67,
-                "has_insight": True,
-                "relevance_score": "",  # Empty string - should become 0.0
-                "focus_area_matched": "operational efficiency",
-                "metadata": {
-                    "timestamp": 1756011469.1234567,
-                    "has_insight": True,
-                    "speaker_role": "expert",
-                    "transcript_name": "George Perry-West - Pegasus Foods, Inc - Former FSQA Manager",
-                    "position": 67,
-                },
+            },
+        ]
+
+        # Filter expert quotes
+        expert_quotes = self.tool.get_expert_quotes_only(sample_quotes)
+
+        # Verify filtering results
+        self.assertEqual(len(expert_quotes), 2)  # Only expert quotes should remain
+        
+        for quote in expert_quotes:
+            self.assertEqual(quote["speaker_role"], "expert")
+            self.assertIn("text", quote)
+            self.assertIn("transcript_name", quote)
+
+    def test_quote_ranking(self):
+        """Test quote ranking functionality."""
+        test_quotes = [
+            {
+                "text": "FlexXray has a strong competitive advantage in the market",
+                "speaker_role": "expert",
+                "transcript_name": "test_transcript",
+                "position": 1,
             },
             {
-                "text": "FlexXray provides excellent service quality to all customers.",
-                "speaker_role": "expert", 
-                "transcript_name": "Test Speaker - Test Company - Test Title",
-                "position": 89,
-                "has_insight": True,
-                "relevance_score": "invalid",  # Invalid string - should become 0.0
-                "focus_area_matched": "service quality",
-                "metadata": {
-                    "timestamp": 1756011470.1234567,
-                    "has_insight": True,
-                    "speaker_role": "expert",
-                    "transcript_name": "Test Speaker - Test Company - Test Title",
-                    "position": 89,
-                },
-            },
+                "text": "The weather is nice today",
+                "speaker_role": "expert",
+                "transcript_name": "test_transcript",
+                "position": 2,
+            }
         ]
 
-        # Enrich the quotes
-        enriched_quotes = self.tool.enrich_quotes_for_export(sample_quotes)
-
-        # Verify enrichment results
-        self.assertEqual(len(enriched_quotes), len(sample_quotes))
+        question = "What evidence shows FlexXray's competitive advantage?"
+        ranked_quotes = self.tool.rank_quotes_for_question(test_quotes, question)
         
-        for quote in enriched_quotes:
-            # Check that all required fields are present
-            self.assertIn("speaker_info", quote)
-            self.assertIn("sentiment", quote)
-            self.assertIn("theme", quote)
-            self.assertIn("date", quote)
-            self.assertIn("relevance_score", quote)
-            
-            # Verify speaker_info structure
-            speaker_info = quote["speaker_info"]
-            self.assertIsInstance(speaker_info, dict)
-            self.assertIn("name", speaker_info)
-            self.assertIn("company", speaker_info)
-            self.assertIn("title", speaker_info)
-            
-            # Verify relevance_score is numeric
-            self.assertIsInstance(quote["relevance_score"], (int, float))
-            self.assertGreaterEqual(quote["relevance_score"], 0)
+        self.assertIsInstance(ranked_quotes, list)
+        self.assertEqual(len(ranked_quotes), len(test_quotes))
+        
+        # The first quote should be more relevant
+        self.assertIn("competitive advantage", ranked_quotes[0]["text"].lower())
 
-    def test_speaker_info_extraction(self):
-        """Test speaker info extraction from transcript filenames."""
-        test_cases = [
-            "Randy_Jesberg- Former CEO - Initial Conversation (06.26.2025)",
-            "Cheryl Bertics - FlexXray Foreign Material Inspection Services - Former Manager",
-            "George Perry-West - Pegasus Foods, Inc - Former FSQA Manager",
-            "Simple Name - Company",
-            "Just Name",
-        ]
-
-        for test_case in test_cases:
-            quote = {"transcript_name": test_case}
-            enriched = self.tool._add_speaker_info(quote)
-            speaker_info = enriched.get("speaker_info", {})
-
-            self.assertIsInstance(speaker_info, dict)
-            self.assertIn("name", speaker_info)
-            self.assertIn("company", speaker_info)
-            self.assertIn("title", speaker_info)
-
-    def test_sentiment_analysis(self):
-        """Test sentiment analysis functionality."""
+    def test_quote_reranking(self):
+        """Test quote reranking functionality."""
         test_quotes = [
-            "This is an excellent product with great quality and strong performance.",
-            "We face significant challenges and problems with this approach.",
-            "The service is adequate but nothing special.",
-            "Our technology provides outstanding advantages and superior results.",
+            {
+                "text": "FlexXray has a strong competitive advantage",
+                "speaker_role": "expert",
+                "transcript_name": "test_transcript",
+                "position": 1,
+            },
+            {
+                "text": "The weather is nice today",
+                "speaker_role": "expert",
+                "transcript_name": "test_transcript",
+                "position": 2,
+            }
         ]
 
-        for text in test_quotes:
-            quote = {"text": text}
-            enriched = self.tool._add_sentiment_analysis(quote)
-            sentiment = enriched.get("sentiment", "")
+        question = "What evidence shows FlexXray's competitive advantage?"
+        reranked_quotes = self.tool.rerank_top_quotes(test_quotes, question, top_n=2)
+        
+        self.assertIsInstance(reranked_quotes, list)
+        self.assertLessEqual(len(reranked_quotes), len(test_quotes))
+        
+        # The most relevant quote should be first
+        if len(reranked_quotes) >= 1:
+            self.assertIn("competitive advantage", reranked_quotes[0]["text"].lower())
 
-            self.assertIsInstance(sentiment, str)
-            self.assertIn(sentiment, ["positive", "negative", "neutral"])
-
-    def test_theme_categorization(self):
-        """Test theme categorization functionality."""
+    def test_summary_generation(self):
+        """Test summary generation functionality."""
         test_quotes = [
-            "Our competitive advantage in the market is clear.",
-            "The value proposition drives customer decisions.",
-            "Our local presence gives us a geographic advantage.",
-            "Proprietary technology provides technical capabilities.",
+            {
+                "text": "FlexXray provides excellent service quality and rapid turnaround times",
+                "speaker_role": "expert",
+                "transcript_name": "test_transcript",
+                "position": 1,
+            }
         ]
 
-        for text in test_quotes:
-            quote = {"text": text}
-            enriched = self.tool._add_theme_categorization(quote)
-            theme = enriched.get("theme", "")
-
-            self.assertIsInstance(theme, str)
-            self.assertGreater(len(theme), 0)
-
-    def test_relevance_score_handling(self):
-        """Test relevance_score numeric handling for various edge cases."""
-        test_cases = [
-            {"relevance_score": 8.5, "description": "Normal float"},
-            {"relevance_score": 10, "description": "Integer"},
-            {"relevance_score": None, "description": "None value"},
-            {"relevance_score": "", "description": "Empty string"},
-            {"relevance_score": "None", "description": "String 'None'"},
-            {"relevance_score": "invalid", "description": "Invalid string"},
-            {"relevance_score": "7.5", "description": "String number"},
-            # Missing relevance_score field
-            {"description": "Missing field"},
-        ]
-
-        for test_case in test_cases:
-            quote = {"text": "Test quote"}
-            if "relevance_score" in test_case:
-                quote["relevance_score"] = test_case["relevance_score"]
-            
-            enriched = self.tool._ensure_required_fields(quote)
-            final_score = enriched.get("relevance_score")
-            
-            self.assertIsInstance(final_score, (int, float))
-            self.assertGreaterEqual(final_score, 0)
+        summary = self.tool.generate_company_summary(test_quotes)
+        self.assertIsInstance(summary, dict)
+        self.assertIn("summary", summary)
 
     def test_excel_export_functionality(self):
         """Test Excel export functionality with enriched quotes."""
@@ -232,7 +161,7 @@ class TestQuoteEnrichment(unittest.TestCase):
         ]
         
         try:
-            excel_file = self.tool.export_quotes_to_excel(enriched_quotes)
+            excel_file = self.tool.export_to_excel(enriched_quotes, "test_quotes.xlsx")
             if excel_file:
                 self.assertTrue(os.path.exists(excel_file))
                 # Clean up the test file
@@ -242,7 +171,7 @@ class TestQuoteEnrichment(unittest.TestCase):
 
     def test_empty_quotes_handling(self):
         """Test handling of empty quotes list."""
-        empty_result = self.tool.enrich_quotes_for_export([])
+        empty_result = self.tool.get_expert_quotes_only([])
         self.assertEqual(empty_result, [])
 
     def test_quote_formatting(self):

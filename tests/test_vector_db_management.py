@@ -9,7 +9,7 @@ import sys
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from quote_analysis_tool import ModularQuoteAnalysisTool
+from streamlined_quote_analysis import StreamlinedQuoteAnalysis
 
 
 def test_duplicate_detection():
@@ -19,7 +19,7 @@ def test_duplicate_detection():
 
     # Initialize the tool
     try:
-        analyzer = ModularQuoteAnalysisTool()
+        analyzer = StreamlinedQuoteAnalysis(api_key="test_key")
         print("✓ Quote analysis tool initialized successfully")
     except Exception as e:
         print(f"✗ Error initializing tool: {e}")
@@ -50,7 +50,7 @@ def test_database_management():
     print("=" * 50)
 
     try:
-        analyzer = ModularQuoteAnalysisTool()
+        analyzer = StreamlinedQuoteAnalysis(api_key="test_key")
         print("✓ Tool initialized")
 
         # Show available management functions

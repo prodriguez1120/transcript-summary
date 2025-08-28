@@ -257,31 +257,46 @@ def run_streamlined_analysis():
     # Save results
     save_start = time.time()
     output_file = analyzer.save_summary(summary_results)
+    
+    # Also export to Excel
+    excel_file = analyzer.export_to_excel(summary_results)
     save_time = time.time() - save_start
 
     total_time = time.time() - total_start_time
     logger.info(f"\nAnalysis complete in {total_time:.2f} seconds!")
     logger.info(f"Results saved to: {output_file} in {save_time:.2f} seconds")
+    if excel_file:
+        logger.info(f"Excel export saved to: {excel_file}")
 
     # Display summary
     logger.info("\n" + "=" * 50)
     logger.info("SUMMARY OVERVIEW")
     logger.info("=" * 50)
 
-    for category, results in summary_results.items():
-        logger.info(f"\n{category.replace('_', ' ').title()}:")
-        for result in results:
-            question = result["question"]
-            quote_count = len(result["selected_quotes"])
-            avg_score = (
-                sum(result["final_scores"]) / len(result["final_scores"])
-                if result["final_scores"]
-                else 0
-            )
+    # Handle streamlined system output format
+    if isinstance(summary_results, dict) and "total_quotes" in summary_results:
+        # Streamlined system format
+        logger.info(f"\nTotal Quotes: {summary_results.get('total_quotes', 0)}")
+        logger.info(f"Expert Responses: {summary_results.get('expert_quotes', 0)}")
+        logger.info(f"Interviewer Questions: {summary_results.get('interviewer_quotes', 0)}")
+        logger.info(f"Analysis Time: {summary_results.get('analysis_timestamp', 'Unknown')}")
+        logger.info(f"Summary: {summary_results.get('summary', 'No summary available')}")
+    else:
+        # Legacy comprehensive system format
+        for category, results in summary_results.items():
+            logger.info(f"\n{category.replace('_', ' ').title()}:")
+            for result in results:
+                question = result["question"]
+                quote_count = len(result["selected_quotes"])
+                avg_score = (
+                    sum(result["final_scores"]) / len(result["final_scores"])
+                    if result["final_scores"]
+                    else 0
+                )
 
-            logger.info(
-                f"  • {question[:60]}... ({quote_count} quotes, avg score: {avg_score:.1f})"
-            )
+                logger.info(
+                    f"  • {question[:60]}... ({quote_count} quotes, avg score: {avg_score:.1f})"
+                )
     
     logger.info(f"\n🎉 Total analysis completed successfully in {total_time:.2f} seconds")
     logger.info("=" * 80)

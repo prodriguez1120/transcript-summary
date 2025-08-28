@@ -136,28 +136,21 @@ class TestStreamlinedQuoteAnalysis(unittest.TestCase):
     def test_format_summary_output(self):
         """Test summary output formatting."""
         sample_results = {
-            "key_takeaways": [
-                {
-                    "question": "What shows market leadership?",
-                    "selected_quotes": [
-                        {
-                            "text": "FlexXray has strong market position",
-                            "metadata": {
-                                "speaker_role": "expert",
-                                "transcript_name": "test.docx"
-                            }
-                        }
-                    ]
-                }
-            ]
+            "total_quotes": 1,
+            "expert_quotes": 1,
+            "interviewer_quotes": 0,
+            "analysis_timestamp": "2025-08-27T17:53:35",
+            "summary": "Analyzed 1 quotes with 1 expert responses."
         }
         
         formatted_output = self.analyzer.format_summary_output(sample_results)
         
-        self.assertIn("FLEXXRAY COMPANY SUMMARY PAGE", formatted_output)
-        self.assertIn("Key Takeaways", formatted_output)
-        self.assertIn("What shows market leadership?", formatted_output)
-        self.assertIn("FlexXray has strong market position", formatted_output)
+        # Test streamlined system format
+        self.assertIn("FlexXray Company Analysis Summary", formatted_output)
+        self.assertIn("Total Quotes Analyzed", formatted_output)
+        self.assertIn("Expert Responses", formatted_output)
+        self.assertIn("Interviewer Questions", formatted_output)
+        self.assertIn("Analysis Time", formatted_output)
 
     def test_question_categories_completeness(self):
         """Test that all question categories have the expected number of questions."""

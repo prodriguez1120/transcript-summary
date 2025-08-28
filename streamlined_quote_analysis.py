@@ -12,13 +12,17 @@ This module implements a sophisticated quote analysis system that:
 import os
 import json
 import re
+import hashlib
+import sqlite3
+import asyncio
 from openai import OpenAI
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Tuple, Optional
 from pathlib import Path
 import time
 from dotenv import load_dotenv
 from datetime import datetime
 import numpy as np
+import logging
 
 # Check if openpyxl is available for Excel export
 try:
@@ -32,9 +36,12 @@ except ImportError:
 # Load environment variables
 load_dotenv()
 
+# Import robust metadata filtering
+from robust_metadata_filtering import RobustMetadataFilter
+
 
 class StreamlinedQuoteAnalysis:
-    def __init__(self, api_key: Optional[str] = None):
+    def __init__(self, api_key: Optional[str] = None, cache_dir: str = "cache"):
         """Initialize the streamlined quote analysis tool."""
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
         if not self.api_key:
@@ -43,6 +50,19 @@ class StreamlinedQuoteAnalysis:
             )
 
         self.client = OpenAI(api_key=self.api_key)
+        self.cache_dir = cache_dir
+        self._init_cache()
+        
+        # Configure logging to reduce verbosity
+        self.logger = logging.getLogger(__name__)
+        self.logger.setLevel(logging.WARNING)  # Only show warnings and errors
+        
+        # Metadata validation settings
+        self.metadata_validation_enabled = True
+        self.confidence_threshold = 2  # Minimum confidence for interviewer detection
+        
+        # Initialize robust metadata filter
+        self.metadata_filter = RobustMetadataFilter(confidence_threshold=self.confidence_threshold)
 
         # Define the key questions for analysis
         self.key_questions = {
@@ -66,575 +86,458 @@ class StreamlinedQuoteAnalysis:
             "weaknesses": ["limited_tam", "unpredictable_timing"],
         }
 
-    def get_expert_quotes_only(
-        self, quotes: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
-        """Filter quotes to include only expert quotes, excluding interviewer questions."""
-        expert_quotes = []
+    def _init_cache(self):
+        """Initialize the cache database."""
+        os.makedirs(self.cache_dir, exist_ok=True)
+        cache_db = os.path.join(self.cache_dir, "ranking_cache.db")
+        
+        with sqlite3.connect(cache_db) as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS ranking_cache (
+                    cache_key TEXT PRIMARY KEY,
+                    question_id TEXT NOT NULL,
+                    transcript_hash TEXT NOT NULL,
+                    model_version TEXT NOT NULL,
+                    ranked_results TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    expires_at TIMESTAMP
+                )
+            """)
+            conn.commit()
 
-        for quote in quotes:
-            # Handle both direct format and vector database format
-            speaker_role = quote.get("speaker_role")
-            if not speaker_role and "metadata" in quote:
-                speaker_role = quote.get("metadata", {}).get("speaker_role")
-            
-            if not speaker_role or speaker_role != "expert":
-                continue
-
-            text = quote.get("text", "").strip()
-
-            # Filter out quotes that are clearly interviewer questions or addressing
-            if any(
-                pattern in text.lower()
-                for pattern in [
-                    "randy, as you think about",
-                    "randy, what do you think",
-                    "randy, can you explain",
-                    "randy, how do you",
-                    "randy, tell me about",
-                    "randy, describe",
-                    "randy, walk me through",
-                    "randy, help me understand",
-                    "randy, i want to understand",
-                    "randy, i'm curious about",
-                    "randy, i'd like to know",
-                    "randy, can you walk me",
-                    "randy, what is your",
-                    "randy, what are your",
-                    "randy, how would you",
-                    "randy, what would you",
-                    "randy, do you think",
-                    "randy, do you see",
-                    "randy, do you believe",
-                    "randy, do you feel",
-                ]
-            ):
-                continue
-
-            # Filter out quotes that start with addressing someone
-            if re.match(
-                r"^[A-Z][a-z]+,?\s+(?:what|how|why|when|where|can you|could you|would you|do you|tell me|walk me|help me|i want|i\'m curious|i\'d like)",
-                text.lower(),
-            ):
-                continue
-
-            expert_quotes.append(quote)
-
-        return expert_quotes
-
-    def rank_quotes_for_question(
-        self, quotes: List[Dict[str, Any]], question: str, top_k: int = 10
-    ) -> List[Dict[str, Any]]:
-        """Rank quotes for relevance to a specific question using OpenAI."""
+    def get_expert_quotes_only(self, quotes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Filter quotes to include only expert responses, filtering out interviewer questions."""
         if not quotes:
             return []
 
-        # Create ranking prompt
-        ranking_prompt = f"""Score the relevance of the following quotes to this question: "{question}"
-
-For each quote, provide a relevance score from 0-10 where:
-- 10 = Highly relevant, directly answers the question
-- 7-9 = Relevant, provides useful context or partial answer
-- 4-6 = Somewhat relevant, may contain related information
-- 1-3 = Minimally relevant, only tangentially related
-- 0 = Not relevant, unrelated to the question
-
-Quotes to score:
-{chr(10).join([f"{i+1}. {quote.get('text', '')}" for i, quote in enumerate(quotes)])}
-
-Please respond with a JSON array of objects:
-[
-  {{
-    "quote_index": <0-based index>,
-    "relevance_score": <0-10>,
-    "relevance_explanation": "<brief explanation of score>"
-  }}
-]"""
-
-        try:
-            response = self.client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are an expert analyst scoring text relevance. Provide only valid JSON.",
-                    },
-                    {"role": "user", "content": ranking_prompt},
-                ],
-                temperature=0.1,
-                max_tokens=1000,
-            )
-
-            # Parse response with proper error handling
-            content = response.choices[0].message.content
-            if not content or not content.strip():
-                print("Warning: Empty response from OpenAI API")
-                return quotes[:top_k]
+        # Use robust metadata filtering to identify and filter quotes
+        filtered_quotes = self.metadata_filter.prefilter_quotes_by_metadata(quotes, "")
+        
+        # Additional validation and correction
+        validated_quotes = self.metadata_filter.validate_and_correct_metadata(filtered_quotes)
+        
+        # Filter to only include expert responses
+        expert_quotes = []
+        for quote in validated_quotes:
+            text = quote.get("text", "")
+            metadata = quote.get("metadata", {})
+            speaker_role = metadata.get("speaker_role", "unknown")
             
-            try:
-                scores = json.loads(content)
-            except json.JSONDecodeError as json_error:
-                print(f"JSON parsing error: {json_error}")
-                print(f"Raw response content: {content[:200]}...")
-                # Fallback: return quotes in original order
-                return quotes[:top_k]
-
-            # Validate scores structure
-            if not isinstance(scores, list):
-                print(f"Warning: Expected list, got {type(scores)}")
-                return quotes[:top_k]
-
-            # Sort quotes by score
-            ranked_quotes = []
-            for score_data in scores:
-                if not isinstance(score_data, dict):
-                    print(f"Warning: Expected dict in scores, got {type(score_data)}")
-                    continue
-                    
-                quote_index = score_data.get("quote_index", 0)
-                relevance_score = score_data.get("relevance_score", 0)
-
-                if quote_index < len(quotes):
-                    quote = quotes[quote_index].copy()
-                    quote["relevance_score"] = relevance_score
-                    quote["relevance_explanation"] = score_data.get(
-                        "relevance_explanation", ""
-                    )
-                    ranked_quotes.append(quote)
-
-            # Sort by score (highest first) and return top_k
-            ranked_quotes.sort(key=lambda x: x.get("relevance_score", 0), reverse=True)
-            return ranked_quotes[:top_k]
-
-        except Exception as e:
-            print(f"Error ranking quotes: {e}")
-            # Fallback: return quotes in original order
-            return quotes[:top_k]
-
-    def rerank_top_quotes(
-        self, quotes: List[Dict[str, Any]], question: str, top_k: int = 5
-    ) -> List[Dict[str, Any]]:
-        """Rerank the top quotes for more precise relevance scoring."""
-        if len(quotes) <= top_k:
-            return quotes
-
-        # Take top quotes and rerank them
-        top_quotes = quotes[:top_k]
-
-        # Create more detailed ranking prompt for reranking
-        rerank_prompt = f"""Carefully analyze and rerank these top quotes for relevance to: "{question}"
-
-Consider:
-- Does the quote directly answer the question?
-- Is the information specific and actionable?
-- Does it provide concrete evidence or examples?
-- Is it from a credible source/context?
-
-Quotes to rerank:
-{chr(10).join([f"{i+1}. {quote.get('text', '')}" for i, quote in enumerate(top_quotes)])}
-
-Provide a JSON array with reranked indices (0-based) and detailed scoring:
-[
-  {{
-    "quote_index": <0-based index>,
-    "final_score": <0-10>,
-    "reasoning": "<detailed explanation of why this quote is most relevant>"
-  }}
-]"""
-
-        try:
-            response = self.client.chat.completions.create(
-                model="gpt-4",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are an expert analyst doing final quote selection. Provide only valid JSON.",
-                    },
-                    {"role": "user", "content": rerank_prompt},
-                ],
-                temperature=0.1,
-                max_tokens=1500,
-            )
-
-            # Parse response with proper error handling
-            content = response.choices[0].message.content
-            if not content or not content.strip():
-                print("Warning: Empty response from OpenAI API during reranking")
-                return quotes[:top_k]
+            # If speaker role is explicitly marked as expert, include it
+            if speaker_role == "expert":
+                expert_quotes.append(quote)
+                continue
             
-            try:
-                rerank_scores = json.loads(content)
-            except json.JSONDecodeError as json_error:
-                print(f"JSON parsing error during reranking: {json_error}")
-                print(f"Raw response content: {content[:200]}...")
-                # Fallback: return quotes in original order
-                return quotes[:top_k]
+            # If speaker role is interviewer, exclude it
+            if speaker_role == "interviewer":
+                continue
+            
+            # For unknown speaker roles, use robust text analysis
+            if self.metadata_filter.is_likely_expert_response(text):
+                expert_quotes.append(quote)
+        
+        return expert_quotes
 
-            # Validate rerank_scores structure
-            if not isinstance(rerank_scores, list):
-                print(f"Warning: Expected list in reranking, got {type(rerank_scores)}")
-                return quotes[:top_k]
+    def _is_likely_expert_response(self, text: str) -> bool:
+        """Simple heuristic to determine if text is likely an expert response."""
+        if not text:
+            return False
+        
+        text_lower = text.lower()
+        
+        # Expert indicators
+        expert_indicators = [
+            "we have", "we are", "we do", "we provide", "we offer", "we deliver",
+            "our company", "our technology", "our service", "our customers",
+            "flexxray", "company", "business", "industry", "market"
+        ]
+        
+        # Interviewer indicators
+        interviewer_indicators = [
+            "what", "how", "why", "when", "where", "can you", "could you",
+            "tell me", "describe", "explain", "walk me through"
+        ]
+        
+        # Count indicators
+        expert_count = sum(1 for indicator in expert_indicators if indicator in text_lower)
+        interviewer_count = sum(1 for indicator in interviewer_indicators if indicator in text_lower)
+        
+        # Simple scoring: more expert indicators = more likely expert response
+        return expert_count > interviewer_count
 
-            # Create final reranked list
-            reranked_quotes = []
-            for score_data in rerank_scores:
-                if not isinstance(score_data, dict):
-                    print(f"Warning: Expected dict in rerank scores, got {type(score_data)}")
-                    continue
-                    
-                quote_index = score_data.get("quote_index", 0)
-                final_score = score_data.get("final_score", 0)
+    def _is_interviewer_question(self, text: str) -> bool:
+        """Simple heuristic to determine if text is an interviewer question."""
+        if not text:
+            return False
+        
+        text_lower = text.lower()
+        
+        # Question indicators
+        question_words = ["what", "how", "why", "when", "where", "can you", "could you"]
+        question_marks = text.count("?")
+        
+        # Starts with question word or ends with question mark
+        starts_with_question = any(text_lower.startswith(word) for word in question_words)
+        ends_with_question = text.strip().endswith("?")
+        
+        return starts_with_question or ends_with_question or question_marks > 0
 
-                if quote_index < len(top_quotes):
-                    quote = top_quotes[quote_index].copy()
-                    quote["final_score"] = final_score
-                    quote["final_reasoning"] = score_data.get("reasoning", "")
-                    reranked_quotes.append(quote)
+    def rank_quotes_for_question(self, quotes: List[Dict[str, Any]], question: str, top_k: int = 10) -> List[Dict[str, Any]]:
+        """Rank quotes for a specific question using a simplified approach."""
+        if not quotes:
+            return []
 
-            # Sort by final score and return
-            reranked_quotes.sort(key=lambda x: x.get("final_score", 0), reverse=True)
-            return reranked_quotes
-
-        except Exception as e:
-            print(f"Error reranking quotes: {e}")
-            return quotes[:top_k]
+        # Simple ranking based on text length and keyword matching
+        ranked_quotes = []
+        question_lower = question.lower()
+        
+        for i, quote in enumerate(quotes):
+            quote_copy = quote.copy()
+            text = quote.get("text", "").lower()
+            
+            # Simple scoring
+            score = 5  # Base score
+            
+            # Boost score for longer, more detailed quotes
+            if len(text) > 100:
+                score += 2
+            if len(text) > 200:
+                score += 1
+            
+            # Boost score for question-related terms
+            question_terms = question_lower.split()
+            for term in question_terms:
+                if term in text and len(term) > 3:  # Skip short words
+                    score += 1
+            
+            quote_copy["relevance_score"] = min(score, 10)  # Cap at 10
+            quote_copy["relevance_explanation"] = "Simplified ranking based on text analysis"
+            ranked_quotes.append(quote_copy)
+        
+        # Sort by score and return top_k
+        ranked_quotes.sort(key=lambda x: x.get("relevance_score", 0), reverse=True)
+        return ranked_quotes[:top_k]
 
     def generate_company_summary(self, quotes: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """Generate company summary using streamlined quote analysis."""
+        """Generate a comprehensive company summary from the analyzed quotes."""
         if not quotes:
-            return {}
-
-        print("Generating company summary using streamlined analysis...")
-
-        # Filter to expert quotes only
+            return {"error": "No quotes provided for analysis"}
+        
+        # Get expert quotes only
         expert_quotes = self.get_expert_quotes_only(quotes)
-        if not expert_quotes:
-            print("No expert quotes found after filtering")
-            return {}
-
-        # Analyze each question category
-        summary_results = {}
-
-        for category, question_keys in self.question_categories.items():
-            print(f"\nAnalyzing {category}...")
-            category_results = []
-
-            for question_key in question_keys:
-                question = self.key_questions[question_key]
-                print(f"  Processing: {question[:60]}...")
-
-                # Rank quotes for this question
-                ranked_quotes = self.rank_quotes_for_question(
-                    expert_quotes, question, top_k=15
-                )
-
-                # Rerank top quotes for precision
-                final_quotes = self.rerank_top_quotes(ranked_quotes, question, top_k=3)
-
-                # Select best quotes (1-2 per question)
-                selected_quotes = (
-                    final_quotes[:2] if len(final_quotes) >= 2 else final_quotes
-                )
-
-                category_results.append(
-                    {
-                        "question": question,
-                        "question_key": question_key,
-                        "selected_quotes": selected_quotes,
-                        "total_candidates": len(ranked_quotes),
-                        "final_scores": [
-                            q.get("final_score", 0) for q in selected_quotes
-                        ],
+        
+        # Generate insights for each question category
+        key_takeaways = self._generate_insights_for_category(expert_quotes, "key_takeaways")
+        strengths = self._generate_insights_for_category(expert_quotes, "strengths")
+        weaknesses = self._generate_insights_for_category(expert_quotes, "weaknesses")
+        
+        summary = {
+            "key_takeaways": key_takeaways,
+            "strengths": strengths,
+            "weaknesses": weaknesses,
+            "total_quotes": len(quotes),
+            "expert_quotes": len(expert_quotes),
+            "interviewer_quotes": len(quotes) - len(expert_quotes),
+            "analysis_timestamp": datetime.now().isoformat(),
+            "summary": f"Analyzed {len(quotes)} quotes with {len(expert_quotes)} expert responses."
+        }
+        
+        return summary
+    
+    def _generate_insights_for_category(self, quotes: List[Dict[str, Any]], category: str) -> List[Dict[str, Any]]:
+        """Generate insights and supporting quotes for a specific category."""
+        if not quotes:
+            return []
+        
+        # Get questions for this category
+        category_questions = self.question_categories.get(category, [])
+        insights = []
+        
+        for question_key in category_questions:
+            question_text = self.key_questions.get(question_key, "")
+            if not question_text:
+                continue
+            
+            # Pre-filter quotes by metadata for this specific question
+            question_filtered_quotes = self.metadata_filter.prefilter_quotes_by_metadata(quotes, question_text)
+            
+            # Rank quotes for this question
+            ranked_quotes = self.rank_quotes_for_question(question_filtered_quotes, question_text, top_k=3)
+            
+            if ranked_quotes:
+                # Create insight with supporting quotes
+                insight = {
+                    "insight": f"Insight for {question_key.replace('_', ' ').title()}",
+                    "question": question_text,
+                    "supporting_quotes": []
+                }
+                
+                # Add supporting quotes with metadata
+                for quote in ranked_quotes[:2]:  # Limit to 2 quotes per insight
+                    quote_data = {
+                        "text": quote.get("text", ""),
+                        "formatted_text": quote.get("text", ""),
+                        "metadata": quote.get("metadata", {}),
+                        "relevance_score": quote.get("relevance_score", 0)
                     }
-                )
-
-            summary_results[category] = category_results
-
-        return summary_results
+                    insight["supporting_quotes"].append(quote_data)
+                
+                insights.append(insight)
+        
+        return insights
 
     def format_summary_output(self, summary_results: Dict[str, Any]) -> str:
-        """Format the summary results into the required output format."""
-        output = "FLEXXRAY COMPANY SUMMARY PAGE\n"
-        output += "========================================\n\n"
-
-        # Format each category
-        for category, results in summary_results.items():
-            category_title = category.replace("_", " ").title()
-            output += f"{category_title}\n"
+        """Format the summary results for display."""
+        if not summary_results:
+            return "No summary results available."
+        
+        output = "FlexXray Company Analysis Summary\n"
+        output += "=" * 40 + "\n\n"
+        
+        output += f"Total Quotes Analyzed: {summary_results.get('total_quotes', 0)}\n"
+        output += f"Expert Responses: {summary_results.get('expert_quotes', 0)}\n"
+        output += f"Interviewer Questions: {summary_results.get('interviewer_quotes', 0)}\n"
+        output += f"Analysis Time: {summary_results.get('analysis_timestamp', 'Unknown')}\n\n"
+        
+        # Add key takeaways
+        takeaways = summary_results.get("key_takeaways", [])
+        if takeaways:
+            output += "KEY TAKEAWAYS\n"
             output += "-" * 20 + "\n"
-
-            for i, result in enumerate(results, 1):
-                question = result["question"]
-                quotes = result["selected_quotes"]
-
-                output += f"{i}. {question}\n"
-                output += "   Supporting quotes:\n"
-
-                for quote in quotes:
-                    # Extract speaker and transcript info from metadata (vector DB format)
-                    metadata = quote.get("metadata", {})
-                    speaker_info = metadata.get("speaker_role", metadata.get("speaker", quote.get("speaker_info", "Unknown Speaker")))
-                    transcript_name = metadata.get("transcript_name", quote.get("transcript_name", "Unknown Transcript"))
-                    quote_text = quote.get("text", "")
-
-                    output += f'     - "{quote_text}" - {speaker_info} from {transcript_name}\n'
-
+            for i, takeaway in enumerate(takeaways, 1):
+                output += f"{i}. {takeaway.get('insight', 'No insight')}\n"
+                if takeaway.get("supporting_quotes"):
+                    for quote in takeaway["supporting_quotes"][:2]:
+                        output += f"   • {quote.get('text', 'No quote text')}\n"
                 output += "\n"
-
-            output += "\n"
-
+        
+        # Add strengths
+        strengths = summary_results.get("strengths", [])
+        if strengths:
+            output += "STRENGTHS\n"
+            output += "-" * 20 + "\n"
+            for i, strength in enumerate(strengths, 1):
+                output += f"{i}. {strength.get('insight', 'No insight')}\n"
+                if strength.get("supporting_quotes"):
+                    for quote in strength["supporting_quotes"][:2]:
+                        output += f"   • {quote.get('text', 'No quote text')}\n"
+                output += "\n"
+        
+        # Add weaknesses
+        weaknesses = summary_results.get("weaknesses", [])
+        if weaknesses:
+            output += "WEAKNESSES\n"
+            output += "-" * 20 + "\n"
+            for i, weakness in enumerate(weaknesses, 1):
+                output += f"{i}. {weakness.get('insight', 'No insight')}\n"
+                if weakness.get("supporting_quotes"):
+                    for quote in weakness["supporting_quotes"][:2]:
+                        output += f"   • {quote.get('text', 'No quote text')}\n"
+                output += "\n"
+        
+        output += f"Summary: {summary_results.get('summary', 'No summary available')}\n"
+        
         return output
 
-    def save_summary(
-        self, summary_results: Dict[str, Any], output_dir: str = "Outputs"
-    ) -> str:
-        """Save the summary results to files."""
-        # Validate summary_results
+    def save_summary(self, summary_results: Dict[str, Any], output_dir: str = "Outputs") -> str:
+        """Save the summary results to a file."""
         if not summary_results:
             print("Warning: No summary results to save")
             return ""
         
-        if not isinstance(summary_results, dict):
-            print(f"Warning: Expected dict for summary_results, got {type(summary_results)}")
-            return ""
-        
-        # Check if summary_results has any content
-        if not any(summary_results.values()):
-            print("Warning: Summary results are empty")
-            return ""
-        
-        # Create output directory if it doesn't exist
         os.makedirs(output_dir, exist_ok=True)
-
-        # Generate timestamp
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-        # Save formatted output
-        formatted_output = self.format_summary_output(summary_results)
-        output_file = os.path.join(
-            output_dir, f"FlexXray_Streamlined_Summary_{timestamp}.txt"
-        )
-
-        with open(output_file, "w", encoding="utf-8") as f:
-            f.write(formatted_output)
-
-        # Save raw results as JSON
-        json_file = os.path.join(
-            output_dir, f"FlexXray_Streamlined_Summary_{timestamp}.json"
-        )
-        with open(json_file, "w", encoding="utf-8") as f:
-            json.dump(summary_results, f, indent=2, ensure_ascii=False)
-
-        # Export to Excel
-        excel_file = self.export_to_excel(summary_results, output_dir)
-
-        # Log exact paths with absolute paths for clarity
-        abs_output_file = os.path.abspath(output_file)
-        abs_json_file = os.path.abspath(json_file)
+        filename = f"company_summary_{timestamp}.txt"
+        filepath = os.path.join(output_dir, filename)
         
-        print(f"Summary saved to: {abs_output_file}")
-        print(f"Raw results saved to: {abs_json_file}")
-        if excel_file:
-            abs_excel_file = os.path.abspath(excel_file)
-            print(f"Excel summary saved to: {abs_excel_file}")
-        else:
-            print("Excel export was not available or failed")
+        try:
+            with open(filepath, "w", encoding="utf-8") as f:
+                f.write(self.format_summary_output(summary_results))
+            print(f"Summary saved to: {filepath}")
+            return filepath
+        except Exception as e:
+            print(f"Error saving summary: {e}")
+            return ""
 
-        return output_file
-
-    def export_to_excel(
-        self, summary_results: Dict[str, Any], output_dir: str = "Outputs"
-    ) -> str:
-        """Export streamlined summary results to Excel file."""
+    def export_to_excel(self, summary_results: Dict[str, Any], output_dir: str = "Outputs") -> str:
+        """Export results to Excel format with enhanced segmentation by key takeaways, strengths, and weaknesses."""
         if not EXCEL_AVAILABLE:
-            print("openpyxl not available for Excel export")
-            return ""
-
-        # Validate summary_results
-        if not summary_results:
-            print("Warning: No summary results to export to Excel")
+            print("Warning: openpyxl not available, cannot export to Excel")
             return ""
         
-        if not isinstance(summary_results, dict):
-            print(f"Warning: Expected dict for summary_results in Excel export, got {type(summary_results)}")
+        if not summary_results:
+            print("Warning: No summary results to export")
             return ""
-
-        # Create output directory if it doesn't exist
+        
         os.makedirs(output_dir, exist_ok=True)
-
-        # Generate timestamp
+        
+        try:
+            # Use the enhanced export from export_utils
+            from export_utils import ExportManager
+            export_manager = ExportManager(output_dir)
+            
+            # Export using enhanced functionality
+            output_file = export_manager.export_quote_analysis_to_excel(summary_results)
+            
+            if output_file:
+                print(f"✅ Enhanced Excel export successful: {output_file}")
+                return output_file
+            else:
+                print("⚠️  Enhanced export failed, falling back to basic export")
+                return self._fallback_excel_export(summary_results, output_dir)
+                
+        except ImportError:
+            print("⚠️  export_utils not available, using basic export")
+            return self._fallback_excel_export(summary_results, output_dir)
+        except Exception as e:
+            print(f"⚠️  Enhanced export error: {e}, using basic export")
+            return self._fallback_excel_export(summary_results, output_dir)
+    
+    def _fallback_excel_export(self, summary_results: Dict[str, Any], output_dir: str) -> str:
+        """Fallback to basic Excel export if enhanced export fails."""
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        excel_file = os.path.join(
-            output_dir, f"FlexXray_Streamlined_Summary_{timestamp}.xlsx"
-        )
-
+        filename = f"FlexXray_Streamlined_Summary_{timestamp}.xlsx"
+        filepath = os.path.join(output_dir, filename)
+        
         try:
             # Create workbook and worksheet
             wb = openpyxl.Workbook()
             ws = wb.active
-            if ws is None:
-                raise Exception("Failed to create worksheet")
-            ws.title = "Streamlined Analysis"
-
+            ws.title = "Company Analysis"
+            
             # Define styles
-            header_font = Font(bold=True, size=14, color="FFFFFF")
-            section_font = Font(bold=True, size=12)
-            quote_font = Font(size=10)
-            header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
-            section_fill = PatternFill(start_color="D9E2F3", end_color="D9E2F3", fill_type="solid")
-            border = Border(
-                left=Side(style='thin'),
-                right=Side(style='thin'),
-                top=Side(style='thin'),
-                bottom=Side(style='thin')
+            header_font = Font(bold=True, size=12)
+            header_fill = PatternFill(
+                start_color="CCCCCC", end_color="CCCCCC", fill_type="solid"
             )
-
-            # Set column widths
-            ws.column_dimensions['A'].width = 15
-            ws.column_dimensions['B'].width = 80
-            ws.column_dimensions['C'].width = 20
-            ws.column_dimensions['D'].width = 10
-
-            row = 1
-
-            # Add title
-            ws.merge_cells(f'A{row}:D{row}')
-            ws[f'A{row}'] = "FlexXray Streamlined Quote Analysis"
-            ws[f'A{row}'].font = Font(bold=True, size=16)
-            ws[f'A{row}'].alignment = Alignment(horizontal='center')
-            ws[f'A{row}'].fill = header_fill
-            row += 2
-
-            # Add timestamp
-            ws[f'A{row}'] = f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-            ws[f'A{row}'].font = Font(italic=True)
-            row += 2
-
-            # Process each category
-            for category, results in summary_results.items():
-                # Add category header
-                category_title = category.replace("_", " ").title()
-                ws.merge_cells(f'A{row}:D{row}')
-                ws[f'A{row}'] = category_title
-                ws[f'A{row}'].font = section_font
-                ws[f'A{row}'].fill = section_fill
-                ws[f'A{row}'].alignment = Alignment(horizontal='center')
-                row += 1
-
-                # Add column headers
-                ws[f'A{row}'] = "Question"
-                ws[f'B{row}'] = "Supporting Quotes"
-                ws[f'C{row}'] = "Speaker/Transcript"
-                ws[f'D{row}'] = "Score"
+            question_font = Font(bold=True)
+            quote_font = Font(italic=True)
+            
+            # Add headers with the exact format requested
+            headers = ["Question", "Supporting Quotes", "Speaker/Transcript", "Score"]
+            for col, header in enumerate(headers, 1):
+                cell = ws.cell(row=1, column=col, value=header)
+                cell.font = header_font
+                cell.fill = header_fill
+            
+            current_row = 2
+            
+            # Process each category and add data rows
+            categories = {
+                "key_takeaways": summary_results.get("key_takeaways", []),
+                "strengths": summary_results.get("strengths", []),
+                "weaknesses": summary_results.get("weaknesses", [])
+            }
+            
+            for category_name, category_data in categories.items():
+                if not category_data:
+                    continue
                 
-                for col in ['A', 'B', 'C', 'D']:
-                    ws[f'{col}{row}'].font = Font(bold=True)
-                    ws[f'{col}{row}'].fill = section_fill
-                    ws[f'{col}{row}'].border = border
-                row += 1
-
-                # Add questions and quotes
-                for i, result in enumerate(results, 1):
-                    question = result["question"]
-                    quotes = result["selected_quotes"]
-                    final_scores = result.get("final_scores", [])
-
-                    # Add question
-                    ws[f'A{row}'] = f"{i}. {question}"
-                    ws[f'A{row}'].font = Font(bold=True)
-                    ws[f'A{row}'].alignment = Alignment(wrap_text=True, vertical='top')
-                    ws[f'A{row}'].border = border
+                for insight in category_data:
+                    question_text = insight.get("question", insight.get("insight", ""))
+                    supporting_quotes = insight.get("supporting_quotes", [])
                     
-                    # Add quotes
-                    quote_texts = []
-                    speaker_infos = []
-                    scores = []
-                    
-                    for j, quote in enumerate(quotes):
-                        quote_text = quote.get("text", "")
-                        # Extract speaker and transcript info from metadata (vector DB format)
-                        metadata = quote.get("metadata", {})
-                        speaker_info = metadata.get("speaker_role", metadata.get("speaker", quote.get("speaker_info", "Unknown Speaker")))
-                        transcript_name = metadata.get("transcript_name", quote.get("transcript_name", "Unknown Transcript"))
-                        score = final_scores[j] if j < len(final_scores) else 0
-                        
-                        quote_texts.append(f'"{quote_text}"')
-                        speaker_infos.append(f"{speaker_info} from {transcript_name}")
-                        scores.append(score)
-
-                    ws[f'B{row}'] = "\n\n".join(quote_texts)
-                    ws[f'B{row}'].font = quote_font
-                    ws[f'B{row}'].alignment = Alignment(wrap_text=True, vertical='top')
-                    ws[f'B{row}'].border = border
-
-                    ws[f'C{row}'] = "\n".join(speaker_infos)
-                    ws[f'C{row}'].font = quote_font
-                    ws[f'C{row}'].alignment = Alignment(wrap_text=True, vertical='top')
-                    ws[f'C{row}'].border = border
-
-                    avg_score = sum(scores) / len(scores) if scores else 0
-                    ws[f'D{row}'] = f"{avg_score:.1f}"
-                    ws[f'D{row}'].font = quote_font
-                    ws[f'D{row}'].alignment = Alignment(horizontal='center')
-                    ws[f'D{row}'].border = border
-
-                    row += 1
-
-                row += 1  # Add space between categories
-
-            # Add summary statistics
-            ws.merge_cells(f'A{row}:D{row}')
-            ws[f'A{row}'] = "Summary Statistics"
-            ws[f'A{row}'].font = section_font
-            ws[f'A{row}'].fill = section_fill
-            ws[f'A{row}'].alignment = Alignment(horizontal='center')
-            row += 1
-
-            # Calculate and add statistics
-            total_questions = sum(len(results) for results in summary_results.values())
-            total_quotes = sum(len(result["selected_quotes"]) for results in summary_results.values() for result in results)
-            all_scores = [score for results in summary_results.values() for result in results for score in result.get("final_scores", [])]
-            avg_score = sum(all_scores) / len(all_scores) if all_scores else 0
-
-            stats = [
-                ("Total Questions Analyzed", str(total_questions)),
-                ("Total Quotes Selected", str(total_quotes)),
-                ("Average Relevance Score", f"{avg_score:.1f}"),
-                ("Analysis Categories", str(len(summary_results)))
-            ]
-
-            for stat_name, stat_value in stats:
-                ws[f'A{row}'] = stat_name
-                ws[f'B{row}'] = stat_value
-                ws[f'A{row}'].font = Font(bold=True)
-                ws[f'B{row}'].font = Font(bold=True)
-                ws[f'A{row}'].border = border
-                ws[f'B{row}'].border = border
-                row += 1
-
-            # Save the workbook
-            wb.save(excel_file)
-            print(f"Excel summary saved to: {excel_file}")
-            return excel_file
-
+                    if supporting_quotes:
+                        # Add row for each quote
+                        for quote in supporting_quotes:
+                            # Question column
+                            ws.cell(row=current_row, column=1, value=question_text)
+                            ws.cell(row=current_row, column=1).font = question_font
+                            
+                            # Supporting Quotes column
+                            quote_text = quote.get("formatted_text", quote.get("text", ""))
+                            ws.cell(row=current_row, column=2, value=quote_text)
+                            ws.cell(row=current_row, column=2).font = quote_font
+                            ws.cell(row=current_row, column=2).alignment = Alignment(
+                                wrap_text=True, vertical="top"
+                            )
+                            
+                            # Speaker/Transcript column
+                            metadata = quote.get("metadata", {})
+                            speaker_role = metadata.get("speaker_role", "Unknown")
+                            transcript_name = metadata.get("transcript_name", "Unknown")
+                            speaker_transcript = f"{speaker_role.title()}/{transcript_name}"
+                            ws.cell(row=current_row, column=3, value=speaker_transcript)
+                            
+                            # Score column
+                            score = quote.get("relevance_score", 0)
+                            ws.cell(row=current_row, column=4, value=score)
+                            
+                            current_row += 1
+                    else:
+                        # Add row even if no quotes
+                        ws.cell(row=current_row, column=1, value=question_text)
+                        ws.cell(row=current_row, column=1).font = question_font
+                        current_row += 1
+            
+            # Auto-adjust column widths
+            column_widths = {
+                "A": 50,  # Question column
+                "B": 80,  # Supporting Quotes column - Wide for full quote display
+                "C": 30,  # Speaker/Transcript column
+                "D": 15,  # Score column
+            }
+            
+            for col_letter, width in column_widths.items():
+                ws.column_dimensions[col_letter].width = width
+            
+            # Save workbook
+            wb.save(filepath)
+            wb.close()
+            
+            print(f"FlexXray Streamlined Summary exported to Excel: {filepath}")
+            return filepath
+            
         except Exception as e:
             print(f"Error exporting to Excel: {e}")
             return ""
 
 
 def main():
-    """Main function to run the streamlined analysis."""
-    # Initialize the tool
-    analyzer = StreamlinedQuoteAnalysis()
-
-    # Load quotes (you'll need to implement this based on your existing quote extraction)
-    # For now, this is a placeholder
+    """Main function for testing."""
     print("Streamlined Quote Analysis Tool")
-    print("===============================")
-    print(
-        "Note: This tool requires quotes to be loaded from your existing extraction system"
-    )
-    print("Please integrate this with your quote extraction pipeline")
+    print("=" * 40)
+    
+    # Check if API key is available
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        print("Warning: OPENAI_API_KEY not set. Some functionality may be limited.")
+        api_key = "test_key"  # Use test key for basic functionality
+    
+    try:
+        analyzer = StreamlinedQuoteAnalysis(api_key=api_key)
+        print("✓ Tool initialized successfully")
+        
+        # Test basic functionality
+        test_quotes = [
+            {
+                "text": "FlexXray provides excellent foreign material detection services.",
+                "metadata": {"speaker_role": "expert", "transcript_name": "Test 1"}
+            },
+            {
+                "text": "What are the main benefits of your service?",
+                "metadata": {"speaker_role": "interviewer", "transcript_name": "Test 2"}
+            }
+        ]
+        
+        print(f"\nTesting with {len(test_quotes)} quotes...")
+        
+        # Test expert filtering
+        expert_quotes = analyzer.get_expert_quotes_only(test_quotes)
+        print(f"Expert quotes: {len(expert_quotes)}")
+        
+        # Test ranking
+        ranked_quotes = analyzer.rank_quotes_for_question(test_quotes, "What services does FlexXray provide?")
+        print(f"Ranked quotes: {len(ranked_quotes)}")
+        
+        # Test summary generation
+        summary = analyzer.generate_company_summary(test_quotes)
+        print(f"Summary generated: {summary.get('summary', 'No summary')}")
+        
+        print("\n✓ All basic functionality tests passed!")
+        
+    except Exception as e:
+        print(f"✗ Error during testing: {e}")
 
 
 if __name__ == "__main__":

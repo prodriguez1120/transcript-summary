@@ -4,8 +4,13 @@ Test script to demonstrate the new speaker role identification and filtering fun
 in the FlexXray Quote Analysis Tool.
 """
 
-from quote_analysis_tool import QuoteAnalysisTool
+import sys
 import os
+
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from streamlined_quote_analysis import StreamlinedQuoteAnalysis
 
 
 def test_speaker_role_identification():
@@ -15,7 +20,7 @@ def test_speaker_role_identification():
 
     # Initialize the tool
     try:
-        analyzer = QuoteAnalysisTool()
+        analyzer = StreamlinedQuoteAnalysis(api_key="test_key")
         print("✓ Quote analysis tool initialized successfully")
     except Exception as e:
         print(f"✗ Error initializing tool: {e}")
@@ -58,13 +63,25 @@ def test_speaker_role_identification():
     expert_count = 0
 
     for i, sentence in enumerate(test_sentences, 1):
-        role = analyzer._identify_speaker_role(sentence)
-        if role == "interviewer":
+        # Use the robust metadata filtering system instead
+        from robust_metadata_filtering import RobustMetadataFilter
+        metadata_filter = RobustMetadataFilter()
+        
+        is_interviewer = metadata_filter.is_interviewer_question(sentence)
+        is_expert = metadata_filter.is_likely_expert_response(sentence)
+        
+        if is_interviewer:
+            role = "interviewer"
             interviewer_count += 1
             marker = "👤"
-        else:
+        elif is_expert:
+            role = "expert"
             expert_count += 1
             marker = "💼"
+        else:
+            role = "uncertain"
+            expert_count += 1  # Count uncertain as expert for now
+            marker = "❓"
 
         print(
             f"{i:2d}. {marker} {role:12} | {sentence[:60]}{'...' if len(sentence) > 60 else ''}"
@@ -83,7 +100,7 @@ def test_speaker_role_filtering():
 
     # Initialize the tool
     try:
-        analyzer = QuoteAnalysisTool()
+        analyzer = StreamlinedQuoteAnalysis(api_key="test_key")
         print("✓ Quote analysis tool initialized successfully")
     except Exception as e:
         print(f"✗ Error initializing tool: {e}")
@@ -166,7 +183,7 @@ def test_speaker_role_filtering():
     print("\nFiltering Results:")
     print("-" * 20)
 
-    # Filter for expert quotes only
+    # Filter for expert quotes only using streamlined system
     expert_quotes = analyzer.get_expert_quotes_only(sample_quotes)
     print(f"Expert quotes only: {len(expert_quotes)} quotes")
     for quote in expert_quotes:
@@ -179,39 +196,41 @@ def test_speaker_role_filtering():
             f"  • {quote['quote'][:40]}{'...' if len(quote['quote']) > 40 else ''}{context_info}"
         )
 
-    # Filter for quotes with context
-    quotes_with_context = analyzer.get_quotes_with_context(sample_quotes)
+    # Filter for quotes with context (simplified for streamlined system)
+    quotes_with_context = [q for q in sample_quotes if q.get("has_context", False)]
     print(f"\nQuotes with context: {len(quotes_with_context)} quotes")
     for quote in quotes_with_context:
         print(
             f"  • {quote['quote'][:40]}{'...' if len(quote['quote']) > 40 else ''} [+{quote.get('context_count', 0)}]"
         )
 
-    # Test context formatting
+    # Test context formatting (simplified)
     print(f"\nContext Formatting Examples:")
     print("-" * 30)
     for quote in quotes_with_context[:2]:  # Show first 2 examples
-        formatted = analyzer.format_quote_with_context(quote)
+        role = quote.get("speaker_role", "unknown")
+        context_info = f" [+{quote.get('context_count', 0)} context]" if quote.get("has_context") else ""
+        formatted = f"{role}: {quote['quote']}{context_info}"
         print(f"Quote ID: {quote['id']}")
         print(formatted)
         print()
 
-    # Get statistics
-    stats = analyzer.get_speaker_role_statistics(sample_quotes)
+    # Get statistics (simplified for streamlined system)
+    total_quotes = len(sample_quotes)
+    expert_quotes_count = len([q for q in sample_quotes if q.get("speaker_role") == "expert"])
+    interviewer_quotes_count = len([q for q in sample_quotes if q.get("speaker_role") == "interviewer"])
+    quotes_with_context_count = len([q for q in sample_quotes if q.get("has_context", False)])
+    
     print(f"Speaker Role & Context Statistics:")
-    print(f"  Total quotes: {stats['total_quotes']}")
-    print(
-        f"  Expert quotes: {stats['expert_quotes']} ({stats['expert_percentage']:.1f}%)"
-    )
-    print(
-        f"  Interviewer quotes: {stats['interviewer_quotes']} ({stats['interviewer_percentage']:.1f}%)"
-    )
-    print(
-        f"  Quotes with context: {stats['quotes_with_context']} ({stats['context_percentage']:.1f}%)"
-    )
-    print(
-        f"  Average context per quote: {stats['average_context_per_quote']:.1f} sentences"
-    )
+    print(f"  Total quotes: {total_quotes}")
+    print(f"  Expert quotes: {expert_quotes_count} ({(expert_quotes_count/total_quotes*100):.1f}%)")
+    print(f"  Interviewer quotes: {interviewer_quotes_count} ({(interviewer_quotes_count/total_quotes*100):.1f}%)")
+    print(f"  Quotes with context: {quotes_with_context_count} ({(quotes_with_context_count/total_quotes*100):.1f}%)")
+    
+    # Calculate average context
+    total_context = sum(q.get("context_count", 0) for q in sample_quotes)
+    avg_context = total_context / total_quotes if total_quotes > 0 else 0
+    print(f"  Average context per quote: {avg_context:.1f} sentences")
 
 
 def main():

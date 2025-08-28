@@ -37,173 +37,186 @@ class TestModularPerspectiveAnalysis(unittest.TestCase):
         except ValueError as e:
             self.skipTest(f"API key error: {e}")
 
-    def test_quote_ranker_initialization(self):
-        """Test Quote Ranker initialization."""
+    def test_streamlined_analyzer_initialization(self):
+        """Test Streamlined Analyzer initialization."""
         try:
-            from quote_ranking import QuoteRanker
-            quote_ranker = QuoteRanker(self.api_key)
-            self.assertIsNotNone(quote_ranker)
+            from streamlined_quote_analysis import StreamlinedQuoteAnalysis
+            analyzer = StreamlinedQuoteAnalysis(api_key=self.api_key)
+            self.assertIsNotNone(analyzer)
+            self.assertTrue(hasattr(analyzer, 'key_questions'))
         except ImportError:
-            self.skipTest("quote_ranking module not available")
+            self.skipTest("streamlined_quote_analysis module not available")
 
-    def test_theme_analyzer_initialization(self):
-        """Test Theme Analyzer initialization."""
+    def test_quote_ranking_functionality(self):
+        """Test quote ranking functionality."""
         try:
-            from theme_analysis import ThemeAnalyzer
-            theme_analyzer = ThemeAnalyzer(self.api_key)
-            self.assertIsNotNone(theme_analyzer)
-        except ImportError:
-            self.skipTest("theme_analysis module not available")
-
-    def test_batch_manager_initialization(self):
-        """Test Batch Manager initialization."""
-        try:
-            from batch_manager import BatchManager, BatchConfig
+            from streamlined_quote_analysis import StreamlinedQuoteAnalysis
+            analyzer = StreamlinedQuoteAnalysis(api_key=self.api_key)
             
-            batch_config = BatchConfig(
-                batch_size=15,
-                batch_delay=1.0,
-                failure_delay=2.0,
-                max_retries=2
-            )
-            batch_manager = BatchManager(batch_config)
-            self.assertIsNotNone(batch_manager)
-        except ImportError:
-            self.skipTest("batch_manager module not available")
-
-    def test_perspective_analyzer_initialization(self):
-        """Test Refactored Perspective Analyzer initialization."""
-        try:
-            from perspective_analysis_refactored import PerspectiveAnalyzer
-            perspective_analyzer = PerspectiveAnalyzer(self.api_key)
-            self.assertIsNotNone(perspective_analyzer)
-        except ImportError:
-            self.skipTest("perspective_analysis_refactored module not available")
-
-    def test_batch_manager_functionality(self):
-        """Test batch manager functionality."""
-        try:
-            from batch_manager import BatchManager, BatchConfig
-            
-            # Create batch manager
-            config = BatchConfig(
-                batch_size=10,
-                batch_delay=0.1,  # Fast for testing
-                failure_delay=0.5,
-                max_retries=2
-            )
-            batch_manager = BatchManager(config)
-            
-            # Test configuration
-            batch_manager.configure_batch_processing(batch_size=12, max_retries=3)
-            
-            # Test validation
-            validation = batch_manager.validate_configuration()
-            self.assertIsInstance(validation, dict)
-            self.assertIn("valid", validation)
-            
-            # Test statistics
-            stats = batch_manager.get_batch_processing_stats()
-            self.assertIsInstance(stats, dict)
-            self.assertIn("configuration", stats)
-            self.assertIn("performance", stats)
-            
-        except ImportError:
-            self.skipTest("batch_manager module not available")
-
-    def test_quote_ranker_functionality(self):
-        """Test quote ranker functionality."""
-        try:
-            from quote_ranking import QuoteRanker
-            
-            # Create quote ranker
-            quote_ranker = QuoteRanker("test_key")
-            
-            # Test statistics method
-            empty_stats = quote_ranker.get_ranking_statistics([])
-            self.assertIsInstance(empty_stats, dict)
-            self.assertIn("total_quotes", empty_stats)
-            
-            # Test with mock data
-            mock_quotes = [
-                {"text": "Test quote 1", "selection_stage": "openai_ranked"},
-                {"text": "Test quote 2", "selection_stage": "openai_failed"},
-            ]
-            
-            mock_stats = quote_ranker.get_ranking_statistics(mock_quotes)
-            self.assertIsInstance(mock_stats, dict)
-            self.assertIn("total_quotes", mock_stats)
-            self.assertIn("successful_rankings", mock_stats)
-            self.assertIn("failed_rankings", mock_stats)
-            
-        except ImportError:
-            self.skipTest("quote_ranking module not available")
-
-    def test_theme_analyzer_functionality(self):
-        """Test theme analyzer functionality."""
-        try:
-            from theme_analysis import ThemeAnalyzer
-            
-            # Create theme analyzer
-            theme_analyzer = ThemeAnalyzer("test_key")
-            
-            # Test theme statistics method
-            empty_stats = theme_analyzer.get_theme_statistics([])
-            self.assertIsInstance(empty_stats, dict)
-            self.assertIn("total_themes", empty_stats)
-            
-            # Test with mock data
-            mock_themes = [
+            # Test with sample quotes
+            test_quotes = [
                 {
-                    "name": "Test Theme 1",
-                    "confidence_score": 0.8,
-                    "max_quotes": 4,
-                    "cross_transcript_insights": ["insight1"]
+                    "text": "FlexXray has a strong competitive advantage in the market",
+                    "speaker_role": "expert",
+                    "transcript_name": "test_transcript",
+                    "position": 1,
                 },
                 {
-                    "name": "Test Theme 2", 
-                    "confidence_score": 0.9,
-                    "max_quotes": 3,
-                    "cross_transcript_insights": []
+                    "text": "The weather is nice today",
+                    "speaker_role": "expert",
+                    "transcript_name": "test_transcript",
+                    "position": 2,
                 }
             ]
             
-            mock_stats = theme_analyzer.get_theme_statistics(mock_themes)
-            self.assertIsInstance(mock_stats, dict)
-            self.assertIn("total_themes", mock_stats)
-            self.assertIn("average_confidence", mock_stats)
-            self.assertIn("cross_transcript_coverage", mock_stats)
-            
+            question = "What evidence shows FlexXray's competitive advantage?"
+            ranked_quotes = analyzer.rank_quotes_for_question(test_quotes, question)
+            self.assertIsInstance(ranked_quotes, list)
+            self.assertEqual(len(ranked_quotes), len(test_quotes))
         except ImportError:
-            self.skipTest("theme_analysis module not available")
+            self.skipTest("streamlined_quote_analysis module not available")
+
+    def test_expert_quotes_filtering(self):
+        """Test expert quotes filtering functionality."""
+        try:
+            from streamlined_quote_analysis import StreamlinedQuoteAnalysis
+            analyzer = StreamlinedQuoteAnalysis(api_key=self.api_key)
+            
+            # Test with mixed quote types
+            test_quotes = [
+                {
+                    "text": "FlexXray has a strong competitive advantage",
+                    "speaker_role": "expert",
+                    "transcript_name": "test_transcript",
+                    "position": 1,
+                },
+                {
+                    "text": "Can you tell me more about that?",
+                    "speaker_role": "interviewer",
+                    "transcript_name": "test_transcript",
+                    "position": 2,
+                }
+            ]
+            
+            expert_quotes = analyzer.get_expert_quotes_only(test_quotes)
+            self.assertIsInstance(expert_quotes, list)
+            self.assertEqual(len(expert_quotes), 1)  # Only expert quote should remain
+            self.assertEqual(expert_quotes[0]["speaker_role"], "expert")
+        except ImportError:
+            self.skipTest("streamlined_quote_analysis module not available")
+
+    def test_summary_generation(self):
+        """Test summary generation functionality."""
+        try:
+            from streamlined_quote_analysis import StreamlinedQuoteAnalysis
+            analyzer = StreamlinedQuoteAnalysis(api_key=self.api_key)
+            
+            # Test with sample quotes
+            test_quotes = [
+                {
+                    "text": "FlexXray provides excellent service quality and rapid turnaround times",
+                    "speaker_role": "expert",
+                    "transcript_name": "test_transcript",
+                    "position": 1,
+                }
+            ]
+            
+            summary = analyzer.generate_company_summary(test_quotes)
+            self.assertIsInstance(summary, dict)
+            self.assertIn("key_takeaways", summary)
+        except ImportError:
+            self.skipTest("streamlined_quote_analysis module not available")
+
+    def test_quote_reranking_functionality(self):
+        """Test quote reranking functionality."""
+        try:
+            from streamlined_quote_analysis import StreamlinedQuoteAnalysis
+            analyzer = StreamlinedQuoteAnalysis(api_key=self.api_key)
+            
+            # Test with sample quotes
+            test_quotes = [
+                {
+                    "text": "FlexXray has a strong competitive advantage",
+                    "speaker_role": "expert",
+                    "transcript_name": "test_transcript",
+                    "position": 1,
+                },
+                {
+                    "text": "The weather is nice today",
+                    "speaker_role": "expert",
+                    "transcript_name": "test_transcript",
+                    "position": 2,
+                }
+            ]
+            
+            question = "What evidence shows FlexXray's competitive advantage?"
+            reranked_quotes = analyzer.rerank_top_quotes(test_quotes, question, top_n=2)
+            self.assertIsInstance(reranked_quotes, list)
+            self.assertLessEqual(len(reranked_quotes), len(test_quotes))
+        except ImportError:
+            self.skipTest("streamlined_quote_analysis module not available")
+
+    def test_excel_export_functionality(self):
+        """Test Excel export functionality."""
+        try:
+            from streamlined_quote_analysis import StreamlinedQuoteAnalysis
+            analyzer = StreamlinedQuoteAnalysis(api_key=self.api_key)
+            
+            # Test with sample quotes
+            test_quotes = [
+                {
+                    "text": "FlexXray has strong market leadership",
+                    "speaker_role": "expert",
+                    "transcript_name": "test_transcript",
+                    "position": 1,
+                }
+            ]
+            
+            # Test export functionality
+            excel_file = analyzer.export_to_excel(test_quotes, "test_output.xlsx")
+            if excel_file:
+                self.assertTrue(os.path.exists(excel_file))
+                # Clean up the test file
+                os.remove(excel_file)
+        except ImportError:
+            self.skipTest("streamlined_quote_analysis module not available")
 
     def test_integration(self):
-        """Test the integration between all components."""
+        """Test the integration between all streamlined components."""
         try:
-            from perspective_analysis_refactored import PerspectiveAnalyzer
+            from streamlined_quote_analysis import StreamlinedQuoteAnalysis
+            analyzer = StreamlinedQuoteAnalysis(api_key=self.api_key)
             
-            # Create perspective analyzer
-            perspective_analyzer = PerspectiveAnalyzer("test_key")
+            # Test key questions configuration
+            self.assertIsInstance(analyzer.key_questions, dict)
+            self.assertGreater(len(analyzer.key_questions), 0)
             
-            # Test batch configuration
-            perspective_analyzer.configure_batch_processing(
-                batch_size=25,
-                batch_delay=2.0,
-                max_retries=4
-            )
+            # Test with sample quotes
+            test_quotes = [
+                {
+                    "text": "FlexXray provides excellent service quality and rapid turnaround times",
+                    "speaker_role": "expert",
+                    "transcript_name": "test_transcript",
+                    "position": 1,
+                }
+            ]
             
-            # Test batch metrics
-            batch_metrics = perspective_analyzer.get_batch_processing_metrics()
-            self.assertIsInstance(batch_metrics, dict)
-            self.assertIn("configuration", batch_metrics)
+            # Test expert filtering
+            expert_quotes = analyzer.get_expert_quotes_only(test_quotes)
+            self.assertIsInstance(expert_quotes, list)
             
-            # Test configuration validation
-            validation = perspective_analyzer.validate_batch_configuration()
-            self.assertIsInstance(validation, dict)
-            self.assertIn("valid", validation)
+            # Test ranking
+            question = "What evidence shows FlexXray's competitive advantage?"
+            ranked_quotes = analyzer.rank_quotes_for_question(expert_quotes, question)
+            self.assertIsInstance(ranked_quotes, list)
+            
+            # Test summary generation
+            summary = analyzer.generate_company_summary(expert_quotes)
+            self.assertIsInstance(summary, dict)
+            self.assertIn("key_takeaways", summary)
             
         except ImportError:
-            self.skipTest("perspective_analysis_refactored module not available")
+            self.skipTest("streamlined_quote_analysis module not available")
 
 
 def main():

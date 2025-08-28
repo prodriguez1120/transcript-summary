@@ -2,16 +2,13 @@
 
 ## 📋 Overview
 
-This document provides a comprehensive overview of all workflows, processes, and execution paths in the FlexXray Transcript Summarizer system. It serves as a reference for understanding how different components interact and how to execute various analysis workflows.
+This document provides a comprehensive overview of all current workflows, processes, and execution paths in the FlexXray Transcript Summarizer system. It serves as a reference for understanding how different components interact and how to execute various analysis workflows.
 
 ## 🚀 Entry Points and Execution Methods
 
 ### **1. Command Line Interface (CLI)**
 ```bash
-# Main analysis tool
-python quote_analysis_tool.py --directory "./FlexXray Transcripts"
-
-# Streamlined analysis
+# 🚀 RECOMMENDED: Streamlined analysis (Production use)
 python run_streamlined_analysis.py
 
 # GUI application
@@ -27,48 +24,53 @@ python transcript_gui.py
 
 ### **3. Programmatic API**
 ```python
-from workflow_manager import WorkflowManager
 from streamlined_quote_analysis import StreamlinedQuoteAnalysis
+from workflow_manager import WorkflowManager
 from transcript_grid import TranscriptSummarizer
 ```
 
 ## 🔄 Core Workflow Pipelines
 
-### **Pipeline 1: Complete Quote Analysis Workflow**
+### **Pipeline 1: Streamlined Analysis Workflow (CURRENT)**
 
-**Entry Point**: `quote_analysis_tool.py`
-**Orchestrator**: `WorkflowManager`
+**Entry Point**: `run_streamlined_analysis.py`
+**Orchestrator**: `StreamlinedQuoteAnalysis`
 
 ```mermaid
 graph TD
     A[Start] --> B[Initialize Components]
     B --> C[Load Configuration]
     C --> D[Extract Quotes]
-    D --> E[Enrich Quotes]
-    E --> F[Analyze Perspectives]
-    F --> G[Generate Summary]
-    G --> H[Export Results]
-    H --> I[Complete]
+    D --> E[Robust Metadata Filtering]
+    E --> F[Question-Specific Analysis]
+    F --> G[Hybrid Ranking]
+    G --> H[Generate Summary]
+    H --> I[Export Results]
+    I --> J[Complete]
     
     D --> D1[Document Processing]
     D --> D2[Quote Extraction]
     D --> D3[Speaker Identification]
     
-    E --> E1[Quote Enrichment]
-    E --> E2[Theme Categorization]
-    E --> E3[Metadata Enhancement]
+    E --> E1[Interviewer Detection]
+    E --> E2[Expert Response Detection]
+    E --> E3[Metadata Correction]
     
-    F --> F1[Vector Database Search]
-    F --> F2[OpenAI Ranking]
-    F --> F3[Theme Analysis]
+    F --> F1[7 Business Questions]
+    F --> F2[Context-Aware Filtering]
+    F --> F3[Semantic Search]
     
-    G --> G1[Company Summary]
-    G --> G2[Batch Processing]
-    G --> G3[Response Parsing]
+    G --> G1[Embedding Similarity]
+    G --> G2[GPT Refinement]
+    G --> G3[Confidence Scoring]
     
-    H --> H1[JSON Export]
+    H --> H1[Company Summary]
     H --> H2[Excel Export]
-    H --> H3[Text Export]
+    H --> H3[Performance Metrics]
+    
+    I --> I1[Professional Reports]
+    I --> I2[Metadata Validation]
+    I --> I3[Confidence Analysis]
 ```
 
 **Stages**:
@@ -77,404 +79,349 @@ graph TD
    - Quote identification and speaker role detection
    - Vector database storage
 
-2. **Enrichment** (`PipelineStage.ENRICHMENT`)
-   - Quote metadata enhancement
-   - Theme categorization
-   - Date and context information
+2. **Metadata Filtering** (`PipelineStage.ENRICHMENT`)
+   - Robust interviewer question detection
+   - Expert response identification
+   - Automatic metadata correction
 
 3. **Analysis** (`PipelineStage.ANALYSIS`)
-   - Perspective-based analysis
-   - OpenAI-powered ranking
-   - Theme identification and correlation
+   - 7 specific business questions
+   - Context-aware quote filtering
+   - Semantic search and retrieval
 
 4. **Export** (`PipelineStage.EXPORT`)
-   - Multi-format export generation
+   - Professional Excel reports
    - Company summary creation
-   - Results validation
+   - Confidence analysis and validation
 
-### **Pipeline 2: Streamlined Analysis Workflow**
+### **Pipeline 2: Batch Processing Workflow**
 
-**Entry Point**: `run_streamlined_analysis.py`
-**Orchestrator**: `StreamlinedQuoteAnalysis`
-
-```mermaid
-graph TD
-    A[Start] --> B[Load Existing Quotes]
-    B --> C[Vector Database Setup]
-    C --> D[Semantic Search]
-    D --> E[Quote Ranking]
-    E --> F[Question-Answer Matching]
-    F --> G[Generate Insights]
-    G --> H[Export Results]
-    H --> I[Complete]
-    
-    B --> B1[ChromaDB Connection]
-    B --> B2[Quote Loading]
-    
-    D --> D1[Embedding Generation]
-    D --> D2[Similarity Search]
-    
-    E --> E1[Relevance Scoring]
-    E --> E2[Quality Assessment]
-    
-    F --> F1[Key Questions]
-    F --> F2[Answer Extraction]
-```
-
-**Key Features**:
-- Optimized for efficiency with vector database integration
-- Focus on question-answer matching
-- Streamlined AI calls for better performance
-
-### **Pipeline 3: Transcript Grid Processing**
-
-**Entry Point**: `transcript_gui.py` → `TranscriptSummarizer`
-**Orchestrator**: `TranscriptSummarizer`
+**Entry Point**: `batch_manager.py`
+**Orchestrator**: `BatchManager`
 
 ```mermaid
 graph TD
-    A[Start] --> B[Document Discovery]
-    B --> C[Text Extraction]
-    C --> D[Semantic Chunking]
-    D --> E[Chunk Classification]
-    E --> F[Analysis Processing]
-    F --> G[Summary Generation]
-    G --> H[Export Results]
-    H --> I[Complete]
+    A[Start] --> B[Load Batch Configuration]
+    B --> C[Process Transcripts in Batches]
+    C --> D[Monitor Progress]
+    D --> E[Handle Errors]
+    E --> F[Generate Batch Reports]
+    F --> G[Complete]
     
-    B --> B1[Directory Scanning]
-    B --> B2[File Type Detection]
+    C --> C1[Quote Extraction]
+    C --> C2[Analysis Processing]
+    C --> C3[Result Aggregation]
     
-    C --> C1[Word Document Processing]
-    C --> C2[PDF Processing]
-    C --> C3[Text Cleaning]
+    D --> D1[Progress Tracking]
+    D --> D2[Resource Monitoring]
+    D --> D3[Performance Metrics]
     
-    D --> D1[Logical Segmentation]
-    D --> D2[Intelligent Overlap]
-    D --> D3[Context Preservation]
-    
-    E --> E1[Business Category Classification]
-    E --> E2[Content Type Detection]
-    
-    F --> F1[Multi-threaded Processing]
-    F --> F2[ChromaDB Integration]
-    F --> F3[Performance Optimization]
+    E --> E1[Error Logging]
+    E --> E2[Retry Logic]
+    E --> E3[Fallback Handling]
 ```
 
-**Key Features**:
-- Advanced document processing capabilities
-- Multi-threaded analysis
-- Intelligent semantic chunking
-- Business category classification
-
-## 🏗️ Workflow Components
-
-### **1. Workflow Manager (`workflow_manager.py`)**
-
-**Purpose**: High-level orchestration and pipeline management
-
-**Key Classes**:
-- `WorkflowManager`: Main orchestrator
-- `WorkflowConfig`: Configuration management
-- `WorkflowState`: State tracking
-- `WorkflowStatus`: Status enumeration
-- `PipelineStage`: Stage enumeration
-
-**Capabilities**:
-- Pipeline orchestration (extraction → enrichment → analysis → export)
-- Batch scheduling and monitoring
-- Error reporting and recovery
-- Workflow state management
-- Performance tracking and optimization
-
-### **2. Batch Manager (`batch_manager.py`)**
-
-**Purpose**: Batch processing management for OpenAI operations
-
-**Key Classes**:
-- `BatchManager`: Batch processing orchestrator
-- `BatchConfig`: Batch configuration
-
-**Capabilities**:
-- Batch processing configuration and management
-- Token handling and retry mechanisms
-- Performance tracking and statistics
+**Features**:
+- Configurable batch sizes
+- Progress monitoring and reporting
 - Error handling and recovery
-- Rate limiting and optimization
+- Resource optimization
 
-### **3. Document Processor (`document_processor.py`)**
+### **Pipeline 3: Company Configuration Workflow**
 
-**Purpose**: Document reading and processing for different formats
+**Entry Point**: `company_config.py`
+**Orchestrator**: `CompanyConfigManager`
 
-**Supported Formats**:
-- Word documents (.docx)
-- PDF files (.pdf)
-- Text files (.txt)
-
-**Capabilities**:
-- Multi-format document support
-- Text extraction and formatting
-- Document validation and error handling
-- Dependency checking and graceful degradation
-
-### **4. Vector Database Manager (`vector_database.py`)**
-
-**Purpose**: Vector database operations and semantic search
-
-**Capabilities**:
-- ChromaDB client initialization and management
-- Quote storage with OpenAI embeddings
-- Semantic search functionality with metadata filtering
-- Speaker role filtering and search optimization
-- Database statistics and health monitoring
-
-## 📊 Workflow Configuration
-
-### **Workflow Configuration Options**
-
-```python
-@dataclass
-class WorkflowConfig:
-    max_quotes_for_analysis: int = 50
-    max_tokens_per_quote: int = 200
-    enable_token_logging: bool = True
-    enable_batch_processing: bool = True
-    batch_size: int = 20
-    batch_delay: float = 1.5
-    max_retries: int = 3
-    timeout_minutes: int = 60
-    enable_monitoring: bool = True
-    log_workflow_progress: bool = True
+```mermaid
+graph TD
+    A[Start] --> B[Load Company Config]
+    B --> C[Validate Settings]
+    C --> D[Apply Configuration]
+    D --> E[Test Integration]
+    E --> F[Complete]
+    
+    C --> C1[API Configuration]
+    C --> C2[Processing Settings]
+    C --> C3[Export Preferences]
+    
+    D --> D1[System Integration]
+    D --> D2[Workflow Configuration]
+    D --> D3[Performance Tuning]
 ```
 
-### **Batch Configuration Options**
+**Features**:
+- Company-specific settings
+- Configuration validation
+- Integration testing
+- Performance optimization
 
-```python
-@dataclass
-class BatchConfig:
-    batch_size: int = 20
-    batch_delay: float = 1.5
-    failure_delay: float = 3.0
-    max_retries: int = 3
-    enable_batch_processing: bool = True
-    max_quotes_per_perspective: int = 200
+## 🧩 Component Workflows
+
+### **Quote Processing Workflow**
+
+**Component**: `quote_processing.py`
+**Purpose**: Core quote processing and enrichment
+
+```mermaid
+graph TD
+    A[Raw Quote] --> B[Text Cleaning]
+    B --> C[Speaker Detection]
+    C --> D[Role Classification]
+    D --> E[Metadata Enrichment]
+    E --> F[Quality Validation]
+    F --> G[Processed Quote]
+    
+    B --> B1[Remove Formatting]
+    B --> B2[Normalize Text]
+    B --> B3[Extract Context]
+    
+    C --> C1[Name Detection]
+    C --> C2[Title Extraction]
+    C --> C3[Company Identification]
+    
+    D --> D1[Expert/Interviewer]
+    D --> D2[Confidence Scoring]
+    D --> D3[Validation Rules]
 ```
 
-## 🔧 Workflow Execution Patterns
+### **Quote Ranking Workflow**
 
-### **Pattern 1: Full Analysis Workflow**
+**Component**: `quote_ranking.py`
+**Purpose**: Intelligent quote ranking and selection
 
-```python
-from workflow_manager import WorkflowManager, WorkflowConfig
-
-# Initialize workflow manager
-config = WorkflowConfig(
-    max_quotes_for_analysis=100,
-    enable_batch_processing=True,
-    batch_size=25
-)
-
-workflow = WorkflowManager(api_key="your_key", config=config)
-
-# Execute complete workflow
-result = workflow.execute_complete_workflow(
-    transcript_directory="./FlexXray Transcripts",
-    output_directory="./Outputs"
-)
+```mermaid
+graph TD
+    A[Quote Pool] --> B[Initial Scoring]
+    B --> C[Relevance Filtering]
+    C --> D[Quality Assessment]
+    D --> E[Final Ranking]
+    E --> F[Top Quotes Selected]
+    
+    B --> B1[Semantic Similarity]
+    B --> B2[Content Relevance]
+    B --> B3[Context Matching]
+    
+    C --> C1[Question Alignment]
+    C --> C2[Quote Quality]
+    C --> C3[Metadata Validation]
+    
+    D --> D1[GPT-4 Refinement]
+    D --> D2[Confidence Scoring]
+    D --> D3[Final Selection]
 ```
 
-### **Pattern 2: Streamlined Analysis**
+### **Vector Database Workflow**
 
-```python
-from streamlined_quote_analysis import StreamlinedQuoteAnalysis
+**Component**: `vector_database.py`
+**Purpose**: Semantic search and storage
 
-# Initialize streamlined analyzer
-analyzer = StreamlinedQuoteAnalysis(api_key="your_key")
-
-# Execute streamlined analysis
-result = analyzer.analyze_transcripts(
-    transcript_directory="./FlexXray Transcripts"
-)
+```mermaid
+graph TD
+    A[Document Input] --> B[Text Chunking]
+    B --> C[Embedding Generation]
+    C --> D[Vector Storage]
+    D --> E[Index Creation]
+    E --> F[Search Ready]
+    
+    B --> B1[Chunk Size Optimization]
+    B --> B2[Overlap Management]
+    B --> B3[Context Preservation]
+    
+    C --> C1[OpenAI Embeddings]
+    C --> C2[Dimension Optimization]
+    C --> C3[Quality Validation]
+    
+    D --> D1[ChromaDB Storage]
+    D --> D2[Metadata Indexing]
+    D --> D3[Performance Optimization]
 ```
 
-### **Pattern 3: Individual Component Usage**
+## 🔧 Configuration Workflows
 
-```python
-# Vector database operations
-from vector_database import VectorDatabaseManager
-db_manager = VectorDatabaseManager()
-quotes = db_manager.semantic_search_quotes("market position")
+### **Environment Configuration**
 
-# Quote processing
-from quote_processing import QuoteProcessor
-processor = QuoteProcessor()
-enriched_quotes = processor.enrich_quotes_for_export(quotes)
+**File**: `.env`
+**Purpose**: System-wide configuration
 
-# Perspective analysis
-from perspective_analysis import PerspectiveAnalyzer
-analyzer = PerspectiveAnalyzer(openai_client)
-themes = analyzer.analyze_perspective_with_quotes(...)
+```bash
+# Required Configuration
+OPENAI_API_KEY=your_api_key_here
+
+# Optional Configuration
+CACHE_DIR=cache
+BATCH_SIZE=20
+MAX_QUOTES=50
+CONFIDENCE_THRESHOLD=2
+LOG_LEVEL=INFO
 ```
 
-### **Pattern 4: Batch Processing**
+### **Company Configuration**
+
+**File**: `company_config.py`
+**Purpose**: Company-specific settings
 
 ```python
-from batch_manager import BatchManager, BatchConfig
-
-# Configure batch processing
-config = BatchConfig(
-    batch_size=30,
-    batch_delay=2.0,
-    max_retries=5
-)
-
-batch_manager = BatchManager(config)
-
-# Process items in batches
-results = batch_manager.process_in_batches(
-    items=quotes,
-    process_function=process_quotes_function,
-    context={"perspective": "market_leadership"}
-)
+# Company Configuration Example
+company_config = {
+    "company_name": "FlexXray",
+    "analysis_questions": [
+        "market_leadership",
+        "value_proposition",
+        "local_presence"
+    ],
+    "export_format": "excel",
+    "batch_processing": True,
+    "metadata_validation": True
+}
 ```
 
-## 📈 Workflow Monitoring and Status
+### **Prompt Configuration**
 
-### **Workflow Status Tracking**
+**File**: `prompt_config.py`
+**Purpose**: AI prompt management
 
 ```python
-class WorkflowStatus(Enum):
-    PENDING = "pending"
-    RUNNING = "running"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    CANCELLED = "cancelled"
+# Prompt Configuration Example
+prompts = {
+    "market_leadership": "What evidence shows {company}'s market leadership?",
+    "value_proposition": "How does {company}'s value proposition address risks?",
+    "local_presence": "How does {company}'s local presence drive demand?"
+}
 ```
 
-### **Pipeline Stage Tracking**
+## 📊 Monitoring and Reporting
 
-```python
-class PipelineStage(Enum):
-    EXTRACTION = "extraction"
-    ENRICHMENT = "enrichment"
-    ANALYSIS = "analysis"
-    EXPORT = "export"
-```
+### **Progress Tracking**
 
-### **Workflow State Management**
+**Component**: `workflow_manager.py`
+**Features**:
+- Real-time progress updates
+- Stage completion tracking
+- Performance metrics
+- Error reporting
 
-```python
-@dataclass
-class WorkflowState:
-    status: WorkflowStatus = WorkflowStatus.PENDING
-    current_stage: Optional[PipelineStage] = None
-    start_time: Optional[datetime] = None
-    end_time: Optional[datetime] = None
-    progress: float = 0.0
-    current_operation: str = ""
-    error_message: Optional[str] = None
-    retry_count: int = 0
-    stage_results: Dict[str, Any] = field(default_factory=dict)
-    metadata: Dict[str, Any] = field(default_factory=dict)
-```
+### **Logging and Debugging**
+
+**Component**: `logging_config.py`
+**Features**:
+- Configurable log levels
+- Structured logging
+- Performance profiling
+- Error tracking
+
+### **Performance Metrics**
+
+**Metrics Tracked**:
+- Processing time per stage
+- API call costs
+- Quote quality scores
+- System resource usage
 
 ## 🚨 Error Handling and Recovery
 
-### **Error Handling Strategies**
+### **Error Types and Handling**
 
-1. **Retry Mechanisms**: Automatic retry with exponential backoff
-2. **Fallback Processing**: Alternative processing methods when primary fails
-3. **Graceful Degradation**: Continue processing with reduced functionality
-4. **Error Reporting**: Comprehensive error logging and reporting
-5. **Recovery Points**: Checkpoint-based recovery for long-running workflows
+1. **API Errors**
+   - Rate limiting
+   - Authentication failures
+   - Service unavailability
 
-### **Common Error Scenarios**
+2. **Processing Errors**
+   - File corruption
+   - Memory issues
+   - Timeout handling
 
-1. **OpenAI API Errors**: Rate limiting, token limits, API failures
-2. **File Processing Errors**: Corrupted documents, unsupported formats
-3. **Vector Database Errors**: Connection issues, storage failures
-4. **Configuration Errors**: Missing settings, invalid parameters
-5. **Memory Issues**: Large document processing, batch size optimization
+3. **Recovery Strategies**
+   - Automatic retries
+   - Fallback mechanisms
+   - Graceful degradation
 
-## 🔄 Workflow Optimization
+### **Fallback Mechanisms**
 
-### **Performance Optimization Strategies**
+- **Model Fallbacks**: GPT-4 → GPT-4o-mini → GPT-3.5-turbo
+- **Processing Fallbacks**: Full analysis → Simplified analysis → Basic extraction
+- **Export Fallbacks**: Excel → CSV → Text
 
-1. **Batch Processing**: Process multiple items together to reduce API calls
-2. **Parallel Processing**: Multi-threaded execution for independent operations
-3. **Caching**: Store intermediate results to avoid reprocessing
-4. **Token Management**: Optimize token usage and batch sizes
-5. **Resource Management**: Monitor and optimize memory and CPU usage
+## 🔄 Integration Points
 
-### **Scalability Considerations**
+### **External Systems**
 
-1. **Horizontal Scaling**: Multiple worker processes for large datasets
-2. **Vertical Scaling**: Optimize batch sizes and processing parameters
-3. **Resource Monitoring**: Track performance metrics and bottlenecks
-4. **Load Balancing**: Distribute processing across multiple instances
-5. **Queue Management**: Implement job queues for large-scale processing
+- **OpenAI API**: Quote analysis and ranking
+- **ChromaDB**: Vector storage and search
+- **File Systems**: Document input and output
+- **Excel**: Report generation and export
 
-## 📋 Workflow Checklist
+### **Internal Components**
 
-### **Pre-Execution Checklist**
+- **Quote Analysis Core**: Central analysis engine
+- **Metadata Filtering**: Speaker role detection
+- **Ranking System**: Quote selection algorithms
+- **Export Utilities**: Report generation
 
-- [ ] OpenAI API key configured
-- [ ] Transcript directory exists and accessible
-- [ ] Output directory exists and writable
-- [ ] Required dependencies installed
-- [ ] Configuration validated
-- [ ] Vector database initialized (if using)
+## 📈 Performance Optimization
 
-### **Execution Monitoring**
+### **Optimization Strategies**
 
-- [ ] Workflow status tracking enabled
-- [ ] Progress monitoring active
-- [ ] Error logging configured
-- [ ] Performance metrics collection
-- [ ] Resource usage monitoring
+1. **Batch Processing**: Process multiple items together
+2. **Caching**: Store intermediate results
+3. **Model Selection**: Use appropriate models for each task
+4. **Parallel Processing**: Concurrent execution where possible
 
-### **Post-Execution Validation**
+### **Resource Management**
 
-- [ ] Output files generated successfully
-- [ ] Results validated for completeness
-- [ ] Error logs reviewed
-- [ ] Performance metrics analyzed
-- [ ] Resource cleanup completed
+- **Memory**: Efficient data structures and cleanup
+- **API Calls**: Rate limiting and optimization
+- **Storage**: Compressed storage and cleanup
+- **CPU**: Task prioritization and scheduling
 
-## 🔮 Future Workflow Enhancements
+## 🧪 Testing and Validation
 
-### **Planned Improvements**
+### **Test Workflows**
 
-1. **Web Interface**: Browser-based workflow management
-2. **API Endpoints**: RESTful API for workflow execution
-3. **Real-time Monitoring**: Live workflow status and progress tracking
-4. **Workflow Templates**: Pre-configured workflow templates for common use cases
-5. **Advanced Scheduling**: Cron-based scheduling and automation
+```bash
+# Run all tests
+python run_tests.py
 
-### **Integration Opportunities**
+# Test specific components
+python -m pytest tests/test_streamlined_system.py -v
+python -m pytest tests/test_robust_metadata_filtering.py -v
+python -m pytest tests/test_quote_ranking.py -v
+```
 
-1. **Cloud Deployment**: Scalable cloud-based workflow execution
-2. **Database Integration**: Persistent workflow state and results storage
-3. **Notification Systems**: Email/Slack notifications for workflow completion
-4. **Third-party Integrations**: CRM, document management system integration
-5. **Advanced Analytics**: Workflow performance analytics and optimization
+### **Validation Workflows**
 
-## 📚 Workflow Documentation
+1. **Quote Quality Validation**
+   - Relevance scoring
+   - Metadata accuracy
+   - Content completeness
 
-### **Related Documentation**
+2. **System Performance Validation**
+   - Processing speed
+   - Resource usage
+   - Error rates
 
-- `MODULAR_STRUCTURE_README.md`: Module architecture overview
-- `UNIFIED_CONFIGURATION_README.md`: Configuration system documentation
-- `BATCH_PROCESSING_README.md`: Batch processing implementation details
-- `WORKFLOW_ORCHESTRATION_REFACTORING.md`: Workflow refactoring notes
+3. **Output Quality Validation**
+   - Report completeness
+   - Data accuracy
+   - Format consistency
 
-### **API Reference**
+## 📚 Documentation and Support
 
-- `workflow_manager.py`: Workflow orchestration API
-- `batch_manager.py`: Batch processing API
-- `streamlined_quote_analysis.py`: Streamlined analysis API
-- `transcript_grid.py`: Transcript processing API
+### **Documentation Structure**
+
+- **README.md**: Main project overview
+- **STREAMLINED_ANALYSIS_README.md**: Current system details
+- **COMPANY_CONFIGURATION_README.md**: Configuration guide
+- **BATCH_PROCESSING_README.md**: Batch processing guide
+- **RAG_FUNCTIONALITY_README.md**: Vector database guide
+
+### **Support Resources**
+
+1. **Logs**: `flexxray.log` for detailed execution information
+2. **Configuration**: Environment and company-specific settings
+3. **Testing**: Comprehensive test suite for validation
+4. **Documentation**: Detailed guides for each component
 
 ---
 
-*This workflow manifest provides a comprehensive guide to understanding and executing workflows in the FlexXray Transcript Summarizer system. For specific implementation details, refer to the individual module documentation and API references.*
+**This workflow manifest covers all current and active workflows in the FlexXray Transcript Summarizer system.**

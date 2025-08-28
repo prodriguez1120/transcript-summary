@@ -369,18 +369,35 @@ class SettingsManager:
                 
                 # Load company configurations
                 companies = {}
-                for company_data in config_data.get("companies", []):
-                    # Ensure company_data is a dictionary
-                    if isinstance(company_data, dict):
-                        try:
-                            company_config = CompanyConfig(**company_data)
-                            companies[company_config.name] = company_config
-                        except Exception as e:
-                            print(f"Warning: Could not load company config {company_data}: {e}")
+                companies_data = config_data.get("companies", {})
+                
+                # Handle both list and dict formats for backward compatibility
+                if isinstance(companies_data, list):
+                    # Old format: list of company configs
+                    for company_data in companies_data:
+                        if isinstance(company_data, dict):
+                            try:
+                                company_config = CompanyConfig(**company_data)
+                                companies[company_config.name] = company_config
+                            except Exception as e:
+                                print(f"Warning: Could not load company config {company_data}: {e}")
+                                continue
+                        else:
+                            print(f"Warning: Expected dict for company config, got {type(company_data)}: {company_data}")
                             continue
-                    else:
-                        print(f"Warning: Expected dict for company config, got {type(company_data)}: {company_data}")
-                        continue
+                elif isinstance(companies_data, dict):
+                    # New format: dict of company configs
+                    for company_name, company_data in companies_data.items():
+                        if isinstance(company_data, dict):
+                            try:
+                                company_config = CompanyConfig(**company_data)
+                                companies[company_name] = company_config
+                            except Exception as e:
+                                print(f"Warning: Could not load company config {company_name}: {e}")
+                                continue
+                        else:
+                            print(f"Warning: Expected dict for company config {company_name}, got {type(company_data)}: {company_data}")
+                            continue
                 
                 # Create settings with loaded companies
                 config_data["companies"] = companies

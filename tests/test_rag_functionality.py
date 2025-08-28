@@ -16,7 +16,7 @@ parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, parent_dir)
 
 from settings import get_openai_api_key
-from quote_analysis_tool import ModularQuoteAnalysisTool
+from streamlined_quote_analysis import StreamlinedQuoteAnalysis
 
 
 class TestRAGFunctionality(unittest.TestCase):
@@ -36,83 +36,94 @@ class TestRAGFunctionality(unittest.TestCase):
             self.skipTest(f"API key error: {e}")
         
         # Initialize the tool
-        self.analyzer = ModularQuoteAnalysisTool()
+        self.analyzer = StreamlinedQuoteAnalysis(api_key=self.api_key)
 
-    def test_rag_system_initialization(self):
-        """Test that RAG system initializes correctly."""
+    def test_system_initialization(self):
+        """Test that streamlined system initializes correctly."""
         self.assertIsNotNone(self.analyzer)
-        self.assertTrue(hasattr(self.analyzer, 'get_rag_statistics'))
+        self.assertTrue(hasattr(self.analyzer, 'key_questions'))
+        self.assertTrue(hasattr(self.analyzer, 'client'))
 
-    def test_rag_statistics(self):
-        """Test RAG system statistics."""
-        rag_stats = self.analyzer.get_rag_statistics()
+    def test_key_questions(self):
+        """Test key questions configuration."""
+        self.assertIsInstance(self.analyzer.key_questions, dict)
+        self.assertGreater(len(self.analyzer.key_questions), 0)
         
-        self.assertIsInstance(rag_stats, dict)
-        self.assertIn("search_capabilities", rag_stats)
-        self.assertIsInstance(rag_stats["search_capabilities"], list)
+        # Check for expected questions
+        expected_questions = ["market_leadership", "value_proposition"]
+        for question in expected_questions:
+            self.assertIn(question, self.analyzer.key_questions)
 
-    def test_semantic_search(self):
-        """Test semantic search functionality."""
+    def test_expert_quotes_filtering(self):
+        """Test expert quotes filtering functionality."""
         try:
-            search_results = self.analyzer.semantic_search_quotes(
-                "competitive advantage", n_results=5
-            )
-            self.assertIsInstance(search_results, list)
-        except Exception as e:
-            # If no vector database is available, skip this test
-            self.skipTest(f"Semantic search not available: {e}")
-
-    def test_speaker_filtering(self):
-        """Test speaker role filtering."""
-        try:
-            expert_quotes = self.analyzer.search_quotes_with_speaker_filter(
-                "market expansion", speaker_role="expert", n_results=5
-            )
-            self.assertIsInstance(expert_quotes, list)
-        except Exception as e:
-            # If no vector database is available, skip this test
-            self.skipTest(f"Speaker filtering not available: {e}")
-
-    def test_perspective_based_retrieval(self):
-        """Test perspective-based quote retrieval."""
-        try:
-            if "growth_potential" in self.analyzer.key_perspectives:
-                perspective_quotes = self.analyzer.get_quotes_by_perspective(
-                    "growth_potential",
-                    self.analyzer.key_perspectives["growth_potential"],
-                    n_results=10,
-                )
-                self.assertIsInstance(perspective_quotes, list)
-        except Exception as e:
-            # If no vector database is available, skip this test
-            self.skipTest(f"Perspective retrieval not available: {e}")
-
-    def test_rag_functionality_integration(self):
-        """Test RAG functionality integration."""
-        try:
-            # Test with a small set of quotes
+            # Test with sample quotes
             test_quotes = [
                 {
                     "text": "This is a test quote about business model",
                     "speaker_role": "expert",
                     "transcript_name": "test_transcript",
                     "position": 1,
+                },
+                {
+                    "text": "This is an interviewer question",
+                    "speaker_role": "interviewer", 
+                    "transcript_name": "test_transcript",
+                    "position": 2,
                 }
             ]
             
-            # Test perspective analysis with RAG
-            for perspective_key, perspective_data in self.analyzer.key_perspectives.items():
-                result = self.analyzer.analyze_perspective_with_quotes(
-                    perspective_key, perspective_data, test_quotes
-                )
-                
-                if result:
-                    self.assertIn("total_quotes", result)
-                    self.assertIn("themes", result)
-                    self.assertIsInstance(result["themes"], list)
+            expert_quotes = self.analyzer.get_expert_quotes_only(test_quotes)
+            self.assertIsInstance(expert_quotes, list)
+            self.assertEqual(len(expert_quotes), 1)  # Only expert quote should remain
+            self.assertEqual(expert_quotes[0]["speaker_role"], "expert")
         except Exception as e:
-            # If RAG functionality is not available, skip this test
-            self.skipTest(f"RAG integration not available: {e}")
+            self.skipTest(f"Expert quotes filtering not available: {e}")
+
+    def test_quote_ranking(self):
+        """Test quote ranking functionality."""
+        try:
+            # Test with sample quotes
+            test_quotes = [
+                {
+                    "text": "FlexXray has a strong competitive advantage in the market",
+                    "speaker_role": "expert",
+                    "transcript_name": "test_transcript",
+                    "position": 1,
+                },
+                {
+                    "text": "The weather is nice today",
+                    "speaker_role": "expert",
+                    "transcript_name": "test_transcript", 
+                    "position": 2,
+                }
+            ]
+            
+            question = "What evidence shows FlexXray's competitive advantage?"
+            ranked_quotes = self.analyzer.rank_quotes_for_question(test_quotes, question)
+            self.assertIsInstance(ranked_quotes, list)
+            self.assertEqual(len(ranked_quotes), len(test_quotes))
+        except Exception as e:
+            self.skipTest(f"Quote ranking not available: {e}")
+
+    def test_company_summary_generation(self):
+        """Test company summary generation."""
+        try:
+            # Test with sample quotes
+            test_quotes = [
+                {
+                    "text": "FlexXray provides excellent service quality",
+                    "speaker_role": "expert",
+                    "transcript_name": "test_transcript",
+                    "position": 1,
+                }
+            ]
+            
+            summary = self.analyzer.generate_company_summary(test_quotes)
+            self.assertIsInstance(summary, dict)
+            self.assertIn("summary", summary)
+        except Exception as e:
+            self.skipTest(f"Summary generation not available: {e}")
 
 
 def main():

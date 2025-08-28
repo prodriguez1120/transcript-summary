@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, parent_dir)
 
-from quote_analysis_tool import ModularQuoteAnalysisTool
+from streamlined_quote_analysis import StreamlinedQuoteAnalysis
 from settings import get_openai_api_key
 
 
@@ -41,65 +41,61 @@ class TestDiverseQuotes(unittest.TestCase):
             self.skipTest(f"API key error: {e}")
         
         # Initialize the tool
-        self.tool = ModularQuoteAnalysisTool(api_key=self.api_key)
+        self.tool = StreamlinedQuoteAnalysis(api_key=self.api_key)
 
     def test_tool_initialization(self):
         """Test that the tool initializes correctly."""
         self.assertIsNotNone(self.tool)
-        self.assertTrue(hasattr(self.tool, '_get_diverse_quotes'))
+        self.assertTrue(hasattr(self.tool, 'key_questions'))
+        self.assertTrue(hasattr(self.tool, 'client'))
 
-    def test_diverse_quotes_population(self):
-        """Test if diverse_quotes is actually populated."""
+    def test_expert_quotes_filtering(self):
+        """Test expert quotes filtering functionality."""
         try:
-            # Get some sample quotes first
-            if hasattr(self.tool, 'vector_db_manager') and self.tool.vector_db_manager:
-                # Try to get some quotes from the database
-                try:
-                    sample_quotes = self.tool.vector_db_manager.get_all_quotes(limit=100)
-                    self.logger.info(f"Found {len(sample_quotes)} sample quotes in database")
-                    
-                    if sample_quotes:
-                        # Test the diverse quotes method directly
-                        diverse_quotes = self.tool._get_diverse_quotes(sample_quotes, "summary", 30)
-                        self.logger.info(f"✅ diverse_quotes populated: {len(diverse_quotes)} quotes")
-                        
-                        self.assertIsInstance(diverse_quotes, list)
-                        self.assertGreater(len(diverse_quotes), 0)
-                        
-                        if diverse_quotes:
-                            # Check quote sources
-                            transcript_sources = set(quote.get('transcript_name', 'Unknown') for quote in diverse_quotes)
-                            self.logger.info(f"Quotes from transcripts: {transcript_sources}")
-                            self.assertIsInstance(transcript_sources, set)
-                    else:
-                        self.skipTest("No sample quotes found in database")
-                        
-                except Exception as e:
-                    self.skipTest(f"Error accessing vector database: {e}")
-            else:
-                self.skipTest("Vector database manager not available")
+            # Test with sample quotes
+            test_quotes = [
+                {
+                    "text": "FlexXray has a strong competitive advantage",
+                    "speaker_role": "expert",
+                    "transcript_name": "test_transcript",
+                    "position": 1,
+                },
+                {
+                    "text": "Can you tell me more about that?",
+                    "speaker_role": "interviewer",
+                    "transcript_name": "test_transcript",
+                    "position": 2,
+                }
+            ]
+            
+            expert_quotes = self.tool.get_expert_quotes_only(test_quotes)
+            self.logger.info(f"✅ Expert quotes filtered: {len(expert_quotes)} quotes")
+            
+            self.assertIsInstance(expert_quotes, list)
+            self.assertEqual(len(expert_quotes), 1)  # Only expert quote should remain
+            self.assertEqual(expert_quotes[0]["speaker_role"], "expert")
                 
         except Exception as e:
-            self.skipTest(f"Error in diverse quotes test: {e}")
+            self.skipTest(f"Expert quotes filtering not available: {e}")
 
-    def test_diverse_quotes_with_mock_data(self):
-        """Test diverse quotes with mock data."""
+    def test_quote_ranking_with_mock_data(self):
+        """Test quote ranking with mock data."""
         # Create mock quotes
         mock_quotes = [
             {
-                "text": "Quote 1 about business model",
+                "text": "FlexXray has a strong competitive advantage in the market",
                 "transcript_name": "transcript1",
                 "speaker_role": "expert",
                 "position": 1
             },
             {
-                "text": "Quote 2 about market expansion",
+                "text": "The weather is nice today",
                 "transcript_name": "transcript2", 
                 "speaker_role": "expert",
                 "position": 2
             },
             {
-                "text": "Quote 3 about technology",
+                "text": "FlexXray provides excellent service quality",
                 "transcript_name": "transcript3",
                 "speaker_role": "expert", 
                 "position": 3
@@ -107,37 +103,39 @@ class TestDiverseQuotes(unittest.TestCase):
         ]
         
         try:
-            diverse_quotes = self.tool._get_diverse_quotes(mock_quotes, "summary", 10)
-            self.assertIsInstance(diverse_quotes, list)
-            self.assertLessEqual(len(diverse_quotes), len(mock_quotes))
+            question = "What evidence shows FlexXray's competitive advantage?"
+            ranked_quotes = self.tool.rank_quotes_for_question(mock_quotes, question)
+            self.assertIsInstance(ranked_quotes, list)
+            self.assertEqual(len(ranked_quotes), len(mock_quotes))
         except Exception as e:
-            self.skipTest(f"Diverse quotes method not available: {e}")
+            self.skipTest(f"Quote ranking method not available: {e}")
 
-    def test_diverse_quotes_limits(self):
-        """Test diverse quotes with different limits."""
+    def test_quote_reranking_limits(self):
+        """Test quote reranking with different limits."""
         mock_quotes = [
-            {"text": f"Quote {i}", "transcript_name": f"transcript{i}", "speaker_role": "expert", "position": i}
-            for i in range(50)
+            {"text": f"Quote {i} about FlexXray's competitive advantage", "transcript_name": f"transcript{i}", "speaker_role": "expert", "position": i}
+            for i in range(10)
         ]
         
         try:
             # Test with different limits
-            for limit in [5, 10, 20, 30]:
-                diverse_quotes = self.tool._get_diverse_quotes(mock_quotes, "summary", limit)
-                self.assertIsInstance(diverse_quotes, list)
-                self.assertLessEqual(len(diverse_quotes), limit)
-                self.assertLessEqual(len(diverse_quotes), len(mock_quotes))
+            question = "What evidence shows FlexXray's competitive advantage?"
+            for limit in [2, 5, 8]:
+                reranked_quotes = self.tool.rerank_top_quotes(mock_quotes, question, top_n=limit)
+                self.assertIsInstance(reranked_quotes, list)
+                self.assertLessEqual(len(reranked_quotes), limit)
+                self.assertLessEqual(len(reranked_quotes), len(mock_quotes))
         except Exception as e:
-            self.skipTest(f"Diverse quotes method not available: {e}")
+            self.skipTest(f"Quote reranking method not available: {e}")
 
-    def test_diverse_quotes_empty_input(self):
-        """Test diverse quotes with empty input."""
+    def test_empty_quotes_handling(self):
+        """Test handling of empty quotes list."""
         try:
-            diverse_quotes = self.tool._get_diverse_quotes([], "summary", 10)
-            self.assertIsInstance(diverse_quotes, list)
-            self.assertEqual(len(diverse_quotes), 0)
+            expert_quotes = self.tool.get_expert_quotes_only([])
+            self.assertIsInstance(expert_quotes, list)
+            self.assertEqual(len(expert_quotes), 0)
         except Exception as e:
-            self.skipTest(f"Diverse quotes method not available: {e}")
+            self.skipTest(f"Empty quotes handling not available: {e}")
 
 
 def main():

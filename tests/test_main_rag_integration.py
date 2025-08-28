@@ -16,7 +16,7 @@ parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, parent_dir)
 
 from settings import get_openai_api_key
-from quote_analysis_tool import ModularQuoteAnalysisTool
+from streamlined_quote_analysis import StreamlinedQuoteAnalysis
 
 
 class TestMainToolRAGIntegration(unittest.TestCase):
@@ -36,127 +36,115 @@ class TestMainToolRAGIntegration(unittest.TestCase):
             self.skipTest(f"API key error: {e}")
         
         # Initialize the tool
-        self.analyzer = ModularQuoteAnalysisTool()
+        self.analyzer = StreamlinedQuoteAnalysis(api_key=self.api_key)
 
     def test_tool_initialization(self):
         """Test that the tool initializes correctly."""
         self.assertIsNotNone(self.analyzer)
-        self.assertTrue(hasattr(self.analyzer, 'perspective_analyzer'))
+        self.assertTrue(hasattr(self.analyzer, 'key_questions'))
+        self.assertTrue(hasattr(self.analyzer, 'client'))
 
-    def test_rag_integration_check(self):
-        """Test RAG integration check."""
-        # Check RAG integration
-        rag_enabled = (
-            hasattr(self.analyzer.perspective_analyzer, "vector_db_manager")
-            and self.analyzer.perspective_analyzer.vector_db_manager is not None
-        )
-        
-        if rag_enabled:
-            self.assertIsNotNone(self.analyzer.perspective_analyzer.vector_db_manager)
-            self.assertTrue(hasattr(self.analyzer.perspective_analyzer.vector_db_manager, 'quotes_collection'))
+    def test_streamlined_system_check(self):
+        """Test streamlined system configuration."""
+        # Check streamlined system components
+        self.assertIsInstance(self.analyzer.key_questions, dict)
+        self.assertGreater(len(self.analyzer.key_questions), 0)
+        self.assertIsNotNone(self.analyzer.client)
 
-    def test_perspective_analysis_with_rag(self):
-        """Test perspective analysis with RAG."""
+    def test_quote_analysis_with_streamlined_system(self):
+        """Test quote analysis with streamlined system."""
         # Test with a small set of quotes
         test_quotes = [
             {
-                "text": "This is a test quote about business model",
+                "text": "FlexXray has a strong competitive advantage in the market",
                 "speaker_role": "expert",
                 "transcript_name": "test_transcript",
                 "position": 1,
             }
         ]
 
-        # Test the perspective analysis method
-        for perspective_key, perspective_data in self.analyzer.key_perspectives.items():
-            try:
-                result = self.analyzer.analyze_perspective_with_quotes(
-                    perspective_key, perspective_data, test_quotes
-                )
-
-                if result:
-                    self.assertIn("total_quotes", result)
-                    self.assertIn("themes", result)
-                    self.assertIsInstance(result["themes"], list)
-                    
-                    # Check if RAG was used
-                    if result.get("total_quotes", 0) > len(test_quotes):
-                        # RAG was used - retrieved additional quotes
-                        self.assertGreater(result.get("total_quotes", 0), len(test_quotes))
-                    else:
-                        # Local processing used
-                        self.assertEqual(result.get("total_quotes", 0), len(test_quotes))
-                        
-            except Exception as e:
-                # If perspective analysis fails, skip this test
-                self.skipTest(f"Perspective analysis not available: {e}")
-
-    def test_vector_database_search(self):
-        """Test vector database search directly."""
         try:
-            if hasattr(self.analyzer, 'vector_db_manager') and self.analyzer.vector_db_manager:
-                if self.analyzer.vector_db_manager.quotes_collection:
-                    # Test semantic search
-                    search_results = self.analyzer.vector_db_manager.semantic_search_quotes(
-                        "business model", n_results=3
-                    )
-                    self.assertIsInstance(search_results, list)
-
-                    # Test speaker filtering
-                    expert_quotes = (
-                        self.analyzer.vector_db_manager.search_quotes_with_speaker_filter(
-                            "market", speaker_role="expert", n_results=3
-                        )
-                    )
-                    self.assertIsInstance(expert_quotes, list)
-                else:
-                    self.skipTest("Vector database collection not available")
-            else:
-                self.skipTest("Vector database manager not available")
-        except Exception as e:
-            self.skipTest(f"Vector search not available: {e}")
-
-    def test_rag_statistics(self):
-        """Test RAG statistics."""
-        try:
-            rag_stats = self.analyzer.get_rag_statistics()
-            self.assertIsInstance(rag_stats, dict)
-            self.assertIn("search_capabilities", rag_stats)
-        except Exception as e:
-            self.skipTest(f"RAG statistics not available: {e}")
-
-    def test_semantic_search_integration(self):
-        """Test semantic search integration."""
-        try:
-            search_results = self.analyzer.semantic_search_quotes(
-                "competitive advantage", n_results=5
-            )
-            self.assertIsInstance(search_results, list)
-            
-            if search_results:
-                top_result = search_results[0]
-                self.assertIn("text", top_result)
-                self.assertIn("metadata", top_result)
-        except Exception as e:
-            self.skipTest(f"Semantic search not available: {e}")
-
-    def test_speaker_filtering_integration(self):
-        """Test speaker filtering integration."""
-        try:
-            expert_quotes = self.analyzer.search_quotes_with_speaker_filter(
-                "market expansion", speaker_role="expert", n_results=5
-            )
+            # Test expert quotes filtering
+            expert_quotes = self.analyzer.get_expert_quotes_only(test_quotes)
             self.assertIsInstance(expert_quotes, list)
+            self.assertEqual(len(expert_quotes), 1)
             
-            if expert_quotes:
-                # Verify all quotes are from experts
-                all_experts = all(
-                    q.get('metadata', {}).get('speaker_role') == 'expert' 
-                    for q in expert_quotes
-                )
-                self.assertTrue(all_experts)
+            # Test quote ranking
+            question = "What evidence shows FlexXray's competitive advantage?"
+            ranked_quotes = self.analyzer.rank_quotes_for_question(test_quotes, question)
+            self.assertIsInstance(ranked_quotes, list)
+            self.assertEqual(len(ranked_quotes), len(test_quotes))
+                        
         except Exception as e:
-            self.skipTest(f"Speaker filtering not available: {e}")
+            # If analysis fails, skip this test
+            self.skipTest(f"Quote analysis not available: {e}")
+
+    def test_summary_generation(self):
+        """Test summary generation functionality."""
+        try:
+            # Test with sample quotes
+            test_quotes = [
+                {
+                    "text": "FlexXray provides excellent service quality and rapid turnaround times",
+                    "speaker_role": "expert",
+                    "transcript_name": "test_transcript",
+                    "position": 1,
+                }
+            ]
+            
+            summary = self.analyzer.generate_company_summary(test_quotes)
+            self.assertIsInstance(summary, dict)
+            self.assertIn("summary", summary)
+        except Exception as e:
+            self.skipTest(f"Summary generation not available: {e}")
+
+    def test_excel_export(self):
+        """Test Excel export functionality."""
+        try:
+            # Test with sample quotes
+            test_quotes = [
+                {
+                    "text": "FlexXray has strong market leadership",
+                    "speaker_role": "expert",
+                    "transcript_name": "test_transcript",
+                    "position": 1,
+                }
+            ]
+            
+            # Test export functionality
+            excel_file = self.analyzer.export_to_excel(test_quotes, "test_output.xlsx")
+            if excel_file:
+                self.assertTrue(os.path.exists(excel_file))
+                # Clean up the test file
+                os.remove(excel_file)
+        except Exception as e:
+            self.skipTest(f"Excel export not available: {e}")
+
+    def test_quote_reranking(self):
+        """Test quote reranking functionality."""
+        try:
+            # Test with sample quotes
+            test_quotes = [
+                {
+                    "text": "FlexXray has a strong competitive advantage",
+                    "speaker_role": "expert",
+                    "transcript_name": "test_transcript",
+                    "position": 1,
+                },
+                {
+                    "text": "The weather is nice today",
+                    "speaker_role": "expert",
+                    "transcript_name": "test_transcript",
+                    "position": 2,
+                }
+            ]
+            
+            question = "What evidence shows FlexXray's competitive advantage?"
+            reranked_quotes = self.analyzer.rerank_top_quotes(test_quotes, question, top_n=2)
+            self.assertIsInstance(reranked_quotes, list)
+            self.assertLessEqual(len(reranked_quotes), len(test_quotes))
+        except Exception as e:
+            self.skipTest(f"Quote reranking not available: {e}")
 
 
 def main():

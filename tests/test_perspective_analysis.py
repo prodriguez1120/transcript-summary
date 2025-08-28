@@ -2,6 +2,9 @@
 """
 Unit Tests for Perspective Analysis Complex Logic
 
+⚠️  DEPRECATED: This test file tests the deprecated comprehensive analysis system.
+   Use test_streamlined_system.py instead for production testing.
+
 This module tests the complex logic in perspective_analysis.py, including
 quote ranking, theme analysis, and the various fallback strategies.
 """

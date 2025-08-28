@@ -15,7 +15,7 @@ parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, parent_dir)
 
 from settings import get_openai_api_key
-from quote_analysis_tool import ModularQuoteAnalysisTool
+from streamlined_quote_analysis import StreamlinedQuoteAnalysis
 
 
 class TestRankingCoverage(unittest.TestCase):
@@ -35,205 +35,142 @@ class TestRankingCoverage(unittest.TestCase):
             self.skipTest(f"API key error: {e}")
         
         # Initialize the tool
-        self.analyzer = ModularQuoteAnalysisTool()
+        self.analyzer = StreamlinedQuoteAnalysis(api_key=self.api_key)
 
     def test_tool_initialization(self):
         """Test that the tool initializes correctly."""
         self.assertIsNotNone(self.analyzer)
-        self.assertTrue(hasattr(self.analyzer, 'key_perspectives'))
+        self.assertTrue(hasattr(self.analyzer, 'key_questions'))
 
-    def test_perspective_analysis_with_ranking(self):
-        """Test perspective analysis with ranking."""
+    def test_quote_ranking_functionality(self):
+        """Test quote ranking functionality."""
         # Test with a small set of quotes
         test_quotes = [
             {
-                "text": "This is a test quote about business model",
+                "text": "FlexXray has a strong competitive advantage in the market",
                 "speaker_role": "expert",
                 "transcript_name": "test_transcript",
                 "position": 1,
+            },
+            {
+                "text": "The weather is nice today",
+                "speaker_role": "expert",
+                "transcript_name": "test_transcript",
+                "position": 2,
             }
         ]
 
-        # Test each perspective
-        for perspective_key, perspective_data in self.analyzer.key_perspectives.items():
-            try:
-                result = self.analyzer.analyze_perspective_with_quotes(
-                    perspective_key, perspective_data, test_quotes
-                )
-
-                if result:
-                    self.assertIn("total_quotes", result)
-                    self.assertIn("themes", result)
-                    self.assertIsInstance(result["themes"], list)
-
-                    # Check ranking coverage
-                    if "ranked_quotes" in result:
-                        ranked_quotes = result["ranked_quotes"]
-                        self.assertIsInstance(ranked_quotes, list)
-
-                        # Check selection stages
-                        selection_stages = {}
-                        for quote in ranked_quotes:
-                            stage = quote.get("selection_stage", "unknown")
-                            selection_stages[stage] = selection_stages.get(stage, 0) + 1
-
-                        self.assertIsInstance(selection_stages, dict)
-
-                        # Check ranking scores
-                        if ranked_quotes:
-                            top_quote = ranked_quotes[0]
-                            self.assertIn("openai_rank", top_quote)
-                            self.assertIn("selection_stage", top_quote)
-                            self.assertIn("relevance_explanation", top_quote)
-
-                    # Check themes for ranking info
-                    themes = result.get("themes", [])
-                    if themes:
-                        for theme in themes[:2]:
-                            self.assertIn("name", theme)
-                            theme_quotes = theme.get("quotes", [])
-                            self.assertIsInstance(theme_quotes, list)
-
-                            # Check if theme quotes have ranking info
-                            ranked_in_theme = sum(
-                                1
-                                for q in theme_quotes
-                                if q.get("openai_rank") or q.get("selection_stage")
-                            )
-                            self.assertGreaterEqual(ranked_in_theme, 0)
-
-            except Exception as e:
-                # If perspective analysis fails, skip this test
-                self.skipTest(f"Perspective analysis not available: {e}")
-
-    def test_ranking_statistics_calculation(self):
-        """Test ranking statistics calculation with actual results."""
         try:
-            # Get actual results from one perspective to test ranking statistics
-            if "business_model" in self.analyzer.key_perspectives:
-                test_quotes = [
-                    {
-                        "text": "This is a test quote about business model",
-                        "speaker_role": "expert",
-                        "transcript_name": "test_transcript",
-                        "position": 1,
-                    }
-                ]
-
-                # Get actual results from perspective analysis
-                actual_result = self.analyzer.analyze_perspective_with_quotes(
-                    "business_model",
-                    self.analyzer.key_perspectives["business_model"],
-                    test_quotes,
-                )
-
-                if actual_result:
-                    # Create results structure for ranking statistics
-                    actual_results = {
-                        "perspectives": {"business_model": actual_result},
-                        "all_quotes": [
-                            {"text": "test"}
-                            for _ in range(actual_result.get("total_quotes", 0))
-                        ],
-                    }
-
-                    ranking_stats = self.analyzer.get_quote_ranking_statistics(
-                        actual_results
-                    )
-                    
-                    self.assertIsInstance(ranking_stats, dict)
-                    self.assertIn("total_perspectives", ranking_stats)
-                    self.assertIn("total_ranked_quotes", ranking_stats)
-                    self.assertIn("ranking_coverage", ranking_stats)
-                    self.assertIn("selection_stage_breakdown", ranking_stats)
-
-                    # Show detailed breakdown
-                    if "ranked_quotes" in actual_result:
-                        ranked_quotes = actual_result["ranked_quotes"]
-                        self.assertIsInstance(ranked_quotes, list)
-
-                        # Count by selection stage
-                        stage_counts = {}
-                        for quote in ranked_quotes:
-                            stage = quote.get("selection_stage", "unknown")
-                            stage_counts[stage] = stage_counts.get(stage, 0) + 1
-
-                        self.assertIsInstance(stage_counts, dict)
-
-                        # Show ranking distribution
-                        ranking_distribution = {}
-                        for quote in ranked_quotes:
-                            rank = quote.get("openai_rank", 0)
-                            ranking_distribution[rank] = (
-                                ranking_distribution.get(rank, 0) + 1
-                            )
-
-                        self.assertIsInstance(ranking_distribution, dict)
-                else:
-                    self.skipTest("Could not get actual results for ranking statistics")
+            # Test quote ranking
+            question = "What evidence shows FlexXray's competitive advantage?"
+            ranked_quotes = self.analyzer.rank_quotes_for_question(test_quotes, question)
+            
+            self.assertIsInstance(ranked_quotes, list)
+            self.assertEqual(len(ranked_quotes), len(test_quotes))
+            
+            # Check that quotes are ranked (first quote should be more relevant)
+            if len(ranked_quotes) >= 2:
+                # The first quote should be more relevant to the question
+                self.assertIn("competitive advantage", ranked_quotes[0]["text"].lower())
 
         except Exception as e:
-            self.skipTest(f"Actual ranking statistics not available: {e}")
+            # If ranking fails, skip this test
+            self.skipTest(f"Quote ranking not available: {e}")
 
-    def test_ranking_coverage_metrics(self):
-        """Test ranking coverage metrics."""
+    def test_quote_reranking_functionality(self):
+        """Test quote reranking functionality."""
         try:
-            # Test with mock data
-            mock_results = {
-                "perspectives": {
-                    "test_perspective": {
-                        "ranked_quotes": [
-                            {"openai_rank": 1, "selection_stage": "openai_ranked"},
-                            {"openai_rank": 2, "selection_stage": "openai_ranked"},
-                            {"selection_stage": "openai_failed"},
-                        ]
-                    }
+            # Test with sample quotes
+            test_quotes = [
+                {
+                    "text": "FlexXray has a strong competitive advantage",
+                    "speaker_role": "expert",
+                    "transcript_name": "test_transcript",
+                    "position": 1,
                 },
-                "all_quotes": [{"text": "test1"}, {"text": "test2"}, {"text": "test3"}]
-            }
-
-            ranking_stats = self.analyzer.get_quote_ranking_statistics(mock_results)
-            
-            self.assertIsInstance(ranking_stats, dict)
-            self.assertIn("total_perspectives", ranking_stats)
-            self.assertIn("total_ranked_quotes", ranking_stats)
-            self.assertIn("ranking_coverage", ranking_stats)
-            self.assertIn("selection_stage_breakdown", ranking_stats)
-            
-            # Verify coverage calculation
-            self.assertGreaterEqual(ranking_stats["ranking_coverage"], 0)
-            self.assertLessEqual(ranking_stats["ranking_coverage"], 100)
-            
-        except Exception as e:
-            self.skipTest(f"Ranking coverage metrics not available: {e}")
-
-    def test_selection_stage_tracking(self):
-        """Test selection stage tracking."""
-        try:
-            # Test with mock quotes that have different selection stages
-            mock_quotes = [
-                {"text": "Quote 1", "selection_stage": "openai_ranked", "openai_rank": 1},
-                {"text": "Quote 2", "selection_stage": "openai_ranked", "openai_rank": 2},
-                {"text": "Quote 3", "selection_stage": "openai_failed"},
-                {"text": "Quote 4", "selection_stage": "manual_selected"},
+                {
+                    "text": "The weather is nice today",
+                    "speaker_role": "expert",
+                    "transcript_name": "test_transcript",
+                    "position": 2,
+                }
             ]
 
-            # Test selection stage breakdown
-            selection_stages = {}
-            for quote in mock_quotes:
-                stage = quote.get("selection_stage", "unknown")
-                selection_stages[stage] = selection_stages.get(stage, 0) + 1
-
-            self.assertIn("openai_ranked", selection_stages)
-            self.assertIn("openai_failed", selection_stages)
-            self.assertIn("manual_selected", selection_stages)
+            question = "What evidence shows FlexXray's competitive advantage?"
+            reranked_quotes = self.analyzer.rerank_top_quotes(test_quotes, question, top_n=2)
             
-            self.assertEqual(selection_stages["openai_ranked"], 2)
-            self.assertEqual(selection_stages["openai_failed"], 1)
-            self.assertEqual(selection_stages["manual_selected"], 1)
+            self.assertIsInstance(reranked_quotes, list)
+            self.assertLessEqual(len(reranked_quotes), len(test_quotes))
+            
+            # Check that the most relevant quote is first
+            if len(reranked_quotes) >= 1:
+                self.assertIn("competitive advantage", reranked_quotes[0]["text"].lower())
 
         except Exception as e:
-            self.skipTest(f"Selection stage tracking not available: {e}")
+            self.skipTest(f"Quote reranking not available: {e}")
+
+    def test_expert_quotes_filtering(self):
+        """Test expert quotes filtering functionality."""
+        try:
+            # Test with mixed quote types
+            test_quotes = [
+                {
+                    "text": "FlexXray has a strong competitive advantage",
+                    "speaker_role": "expert",
+                    "transcript_name": "test_transcript",
+                    "position": 1,
+                },
+                {
+                    "text": "Can you tell me more about that?",
+                    "speaker_role": "interviewer",
+                    "transcript_name": "test_transcript",
+                    "position": 2,
+                }
+            ]
+
+            expert_quotes = self.analyzer.get_expert_quotes_only(test_quotes)
+            
+            self.assertIsInstance(expert_quotes, list)
+            self.assertEqual(len(expert_quotes), 1)  # Only expert quote should remain
+            self.assertEqual(expert_quotes[0]["speaker_role"], "expert")
+
+        except Exception as e:
+            self.skipTest(f"Expert quotes filtering not available: {e}")
+
+    def test_ranking_consistency(self):
+        """Test ranking consistency across multiple runs."""
+        try:
+            # Test with sample quotes
+            test_quotes = [
+                {
+                    "text": "FlexXray has a strong competitive advantage in the market",
+                    "speaker_role": "expert",
+                    "transcript_name": "test_transcript",
+                    "position": 1,
+                },
+                {
+                    "text": "The weather is nice today",
+                    "speaker_role": "expert",
+                    "transcript_name": "test_transcript",
+                    "position": 2,
+                }
+            ]
+
+            question = "What evidence shows FlexXray's competitive advantage?"
+            
+            # Run ranking multiple times to check consistency
+            results = []
+            for _ in range(3):
+                ranked_quotes = self.analyzer.rank_quotes_for_question(test_quotes, question)
+                results.append(ranked_quotes)
+            
+            # All results should have the same structure
+            for result in results:
+                self.assertIsInstance(result, list)
+                self.assertEqual(len(result), len(test_quotes))
+
+        except Exception as e:
+            self.skipTest(f"Ranking consistency test not available: {e}")
 
 
 def main():
